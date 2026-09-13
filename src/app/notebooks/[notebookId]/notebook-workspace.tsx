@@ -67,20 +67,70 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sources]);
 
-  async function handleAddSource({ title, text }: { title: string; text: string }) {
+  async function postSource(input: RequestInit) {
     setError(null);
     try {
       const response = await fetch(`/api/notebooks/${notebookId}/sources`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, text }),
+        ...input,
       });
       if (!response.ok) throw new Error('Failed to add source');
+      const body = await response.json();
+      if (Array.isArray(body?.skipped) && body.skipped.length > 0) {
+        setError(
+          `Some files were skipped: ${body.skipped.map((s: { filename: string; reason: string }) => `${s.filename} (${s.reason})`).join(', ')}`,
+        );
+      }
       await refreshSources();
     } catch (err) {
       setError('Something went wrong adding that source. Please try again.');
       throw err;
     }
+  }
+
+  async function handleAddFiles(files: FileList) {
+    const formData = new FormData();
+    for (const file of Array.from(files)) formData.append('files', file);
+    await postSource({ body: formData });
+  }
+
+  async function handleAddWebsite(url: string) {
+    setError(null);
+    try {
+      const response = await fetch(`/api/notebooks/${notebookId}/sources/website`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      if (!response.ok) throw new Error('Failed to add website source');
+      await refreshSources();
+    } catch (err) {
+      setError('Something went wrong adding that source. Please try again.');
+      throw err;
+    }
+  }
+
+  async function handleAddYoutube(url: string) {
+    setError(null);
+    try {
+      const response = await fetch(`/api/notebooks/${notebookId}/sources/youtube`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      if (!response.ok) throw new Error('Failed to add YouTube source');
+      await refreshSources();
+    } catch (err) {
+      setError('Something went wrong adding that source. Please try again.');
+      throw err;
+    }
+  }
+
+  async function handleAddText(text: string) {
+    await postSource({
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
   }
 
   async function handleRetry(sourceId: string) {
@@ -127,7 +177,12 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
   const sourcesPanel = (
     <div className="flex flex-col gap-2">
       <div className="px-3 pt-3">
-        <AddSourceDialog onAdd={handleAddSource} />
+        <AddSourceDialog
+          onAddFiles={handleAddFiles}
+          onAddWebsite={handleAddWebsite}
+          onAddYoutube={handleAddYoutube}
+          onAddText={handleAddText}
+        />
         {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       </div>
       <SourceList

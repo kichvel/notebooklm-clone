@@ -2,10 +2,19 @@ import 'server-only';
 import { NonRetriableError } from 'inngest';
 import { inngest } from '@/lib/inngest/client';
 import { createServiceClient } from '@/lib/supabase/server';
-import { embed } from '@/lib/providers/openai';
+import { embed, generate } from '@/lib/providers/openai';
+import { getAdapter } from './adapters';
+import type { SourceBlock } from './adapters/types';
 
 type ProcessingStep = 'parse' | 'normalize' | 'chunk' | 'embed' | 'finalize';
 type ProcessingStatus = 'in_progress' | 'succeeded' | 'failed';
+
+interface Chunk {
+  text: string;
+  page?: number;
+  section?: string;
+  startSeconds?: number;
+}
 
 async function upsertProcessingStep(
   supabase: ReturnType<typeof createServiceClient>,
@@ -28,56 +37,74 @@ async function upsertProcessingStep(
     .upsert({ source_id: sourceId, step, status, attempts }, { onConflict: 'source_id,step' });
 }
 
+function normalizeText(text: string): string {
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .trim();
+}
+
+function chunkBlock(block: SourceBlock): Chunk[] {
+  return block.text
+    .split(/\n\s*\n/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .map((part) => ({
+      text: part,
+      page: block.page,
+      section: block.section,
+      startSeconds: block.startSeconds,
+    }));
+}
+
 export const ingestSource = inngest.createFunction(
   { id: 'ingest-source', triggers: { event: 'sourcebook/source.ingest.requested' } },
   async ({ event, step }) => {
     const supabase = createServiceClient();
     const sourceId = event.data.sourceId as string;
 
-    const rawText = await step.run('parse', async () => {
+    const blocks = await step.run('parse', async () => {
       await upsertProcessingStep(supabase, sourceId, 'parse', 'in_progress');
 
       const { data: source, error: sourceError } = await supabase
         .from('sources')
-        .select('storage_path')
+        .select('type, storage_path, origin_url')
         .eq('id', sourceId)
         .single();
-      if (sourceError || !source?.storage_path) {
+      if (sourceError || !source) {
         await upsertProcessingStep(supabase, sourceId, 'parse', 'failed');
-        throw new NonRetriableError(`Source ${sourceId} not found or missing storage_path`);
+        throw new NonRetriableError(`Source ${sourceId} not found`);
       }
 
       await supabase.from('sources').update({ status: 'processing' }).eq('id', sourceId);
 
-      const { data: blob, error: downloadError } = await supabase.storage
-        .from('sources')
-        .download(source.storage_path);
-      if (downloadError || !blob) {
+      try {
+        const { blocks } = await getAdapter(source.type).parse(supabase, {
+          sourceId,
+          storagePath: source.storage_path,
+          originUrl: source.origin_url,
+        });
+        await upsertProcessingStep(supabase, sourceId, 'parse', 'succeeded');
+        return blocks;
+      } catch (err) {
         await upsertProcessingStep(supabase, sourceId, 'parse', 'failed');
-        throw downloadError ?? new Error('Missing storage object');
+        throw err;
       }
-
-      const text = await blob.text();
-      await upsertProcessingStep(supabase, sourceId, 'parse', 'succeeded');
-      return text;
     });
 
-    const normalizedText = await step.run('normalize', async () => {
+    const normalizedBlocks = await step.run('normalize', async () => {
       await upsertProcessingStep(supabase, sourceId, 'normalize', 'in_progress');
-      const normalized = rawText
-        .replace(/\r\n/g, '\n')
-        .replace(/[ \t]+/g, ' ')
-        .trim();
+      const normalized = blocks.map((block: SourceBlock) => ({
+        ...block,
+        text: normalizeText(block.text),
+      }));
       await upsertProcessingStep(supabase, sourceId, 'normalize', 'succeeded');
       return normalized;
     });
 
     const chunks = await step.run('chunk', async () => {
       await upsertProcessingStep(supabase, sourceId, 'chunk', 'in_progress');
-      const parts = normalizedText
-        .split(/\n\s*\n/)
-        .map((part) => part.trim())
-        .filter((part) => part.length > 0);
+      const parts = normalizedBlocks.flatMap((block: SourceBlock) => chunkBlock(block));
       await upsertProcessingStep(supabase, sourceId, 'chunk', 'succeeded');
       return parts;
     });
@@ -85,19 +112,48 @@ export const ingestSource = inngest.createFunction(
     await step.run('embed', async () => {
       await upsertProcessingStep(supabase, sourceId, 'embed', 'in_progress');
       for (let i = 0; i < chunks.length; i++) {
-        const embedding = await embed(chunks[i]);
-        const { error } = await supabase
-          .from('source_chunks')
-          .upsert(
-            { source_id: sourceId, chunk_index: i, content: chunks[i], embedding },
-            { onConflict: 'source_id,chunk_index' },
-          );
+        const chunk = chunks[i] as Chunk;
+        const embedding = await embed(chunk.text);
+        const { error } = await supabase.from('source_chunks').upsert(
+          {
+            source_id: sourceId,
+            chunk_index: i,
+            content: chunk.text,
+            page_number: chunk.page ?? null,
+            section: chunk.section ?? null,
+            start_seconds: chunk.startSeconds ?? null,
+            embedding,
+          },
+          { onConflict: 'source_id,chunk_index' },
+        );
         if (error) {
           await upsertProcessingStep(supabase, sourceId, 'embed', 'failed');
           throw error;
         }
       }
       await upsertProcessingStep(supabase, sourceId, 'embed', 'succeeded');
+    });
+
+    await step.run('generate-title', async () => {
+      const sample = chunks
+        .slice(0, 5)
+        .map((c: Chunk) => c.text)
+        .join('\n\n')
+        .slice(0, 4000);
+      if (!sample.trim()) return;
+      try {
+        const title = await generate({
+          system:
+            'You write short, descriptive titles (5-10 words, no quotes, no trailing period) for documents added to a research notebook. Respond with only the title.',
+          prompt: sample,
+        });
+        if (title.trim()) {
+          await supabase.from('sources').update({ title: title.trim() }).eq('id', sourceId);
+        }
+      } catch {
+        // Title quality is not a correctness gate ingestion should fail on; keep the
+        // placeholder title set at source creation if generation is unavailable.
+      }
     });
 
     await step.run('finalize', async () => {

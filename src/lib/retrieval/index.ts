@@ -15,6 +15,7 @@ export interface SearchResult {
   chunkIndex: number;
   pageNumber: number | null;
   section: string | null;
+  startSeconds: number | null;
   similarity: number;
 }
 
@@ -25,6 +26,7 @@ interface MatchSourceChunksRow {
   chunk_index: number;
   page_number: number | null;
   section: string | null;
+  start_seconds: number | null;
   similarity: number;
 }
 
@@ -48,6 +50,7 @@ export async function search(
     chunkIndex: row.chunk_index,
     pageNumber: row.page_number,
     section: row.section,
+    startSeconds: row.start_seconds,
     similarity: row.similarity,
   }));
 }

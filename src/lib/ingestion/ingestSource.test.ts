@@ -74,10 +74,11 @@ describe.skipIf(!hasRealEnv)('ingestSource', () => {
 
     const { data: finalSource } = await service
       .from('sources')
-      .select('status')
+      .select('status, title')
       .eq('id', source!.id)
       .single();
     expect(finalSource?.status).toBe('ready');
+    expect(finalSource?.title).not.toBe('Ingestion test source');
 
     const { data: chunks } = await service
       .from('source_chunks')
