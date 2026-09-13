@@ -61,11 +61,20 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
 
   useEffect(() => {
     const hasActiveSource = sources.some((source) => ACTIVE_STATUSES.has(source.status));
-    if (!hasActiveSource) return;
-    const interval = setInterval(refreshSources, 2000);
+    const awaitingIntro =
+      !hasActiveSource &&
+      sources.some((source) => source.status === 'ready') &&
+      messages.length === 0 &&
+      notebookTitle === 'Untitled notebook';
+    if (!hasActiveSource && !awaitingIntro) return;
+    const interval = setInterval(() => {
+      refreshSources();
+      refreshNotebook();
+      refreshMessages();
+    }, 2000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sources]);
+  }, [sources, messages, notebookTitle]);
 
   async function postSource(input: RequestInit) {
     setError(null);
