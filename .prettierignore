@@ -1,0 +1,11 @@
+node_modules
+.next
+coverage
+playwright-report
+test-results
+
+# Pre-existing product docs, kept as authored
+docs/PRODUCT.md
+docs/ARCHITECTURE.md
+docs/ROADMAP.md
+docs/DECISIONS.md
