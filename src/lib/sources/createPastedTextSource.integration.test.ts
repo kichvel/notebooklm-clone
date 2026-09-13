@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it } from 'vitest';
-import { createClient } from '@supabase/supabase-js';
 import { InngestTestEngine } from '@inngest/test';
 import { createServiceClient } from '@/lib/supabase/server';
+import { createPrimaryTestClient } from '@/lib/supabase/test-helpers';
 import { ingestSource } from '@/lib/ingestion';
 import { createPastedTextSource } from './index';
 
@@ -29,12 +29,7 @@ describe.skipIf(!hasRealEnv)('createPastedTextSource', () => {
   it(
     'uploads the pasted text, registers the source, and enables the real ingestion pipeline to complete it',
     async () => {
-      const user = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        { auth: { persistSession: false, autoRefreshToken: false } },
-      );
-      expect((await user.auth.signInAnonymously()).error).toBeNull();
+      const user = await createPrimaryTestClient();
 
       const { data: notebook, error: notebookError } = await user
         .from('notebooks')

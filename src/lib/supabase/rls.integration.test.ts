@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { createClient } from '@supabase/supabase-js';
 import { createServiceClient } from './server';
+import { createPrimaryTestClient, createSecondaryTestClient } from './test-helpers';
 
 const hasRealSupabaseEnv = Boolean(
   process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY,
@@ -8,14 +8,6 @@ const hasRealSupabaseEnv = Boolean(
 
 describe.skipIf(!hasRealSupabaseEnv)('notebook RLS isolation', () => {
   const createdNotebookIds: string[] = [];
-
-  function createAnonClient() {
-    return createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      { auth: { persistSession: false, autoRefreshToken: false } },
-    );
-  }
 
   afterAll(async () => {
     if (createdNotebookIds.length === 0) return;
@@ -26,11 +18,8 @@ describe.skipIf(!hasRealSupabaseEnv)('notebook RLS isolation', () => {
   it(
     "prevents one anonymous user from reading or modifying another user's notebook",
     async () => {
-      const userA = createAnonClient();
-      const userB = createAnonClient();
-
-      expect((await userA.auth.signInAnonymously()).error).toBeNull();
-      expect((await userB.auth.signInAnonymously()).error).toBeNull();
+      const userA = await createPrimaryTestClient();
+      const userB = await createSecondaryTestClient();
 
       const { data: notebookA, error: insertError } = await userA
         .from('notebooks')

@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it } from 'vitest';
-import { createClient } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase/server';
+import { createPrimaryTestClient } from '@/lib/supabase/test-helpers';
 import { embed } from '@/lib/providers/openai';
 import { search } from './index';
 
@@ -12,14 +12,6 @@ const hasRealSupabaseEnv = Boolean(
 describe.skipIf(!hasRealSupabaseEnv)('search', () => {
   const createdNotebookIds: string[] = [];
 
-  function createAnonClient() {
-    return createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      { auth: { persistSession: false, autoRefreshToken: false } },
-    );
-  }
-
   afterAll(async () => {
     if (createdNotebookIds.length === 0) return;
     const service = createServiceClient();
@@ -29,8 +21,7 @@ describe.skipIf(!hasRealSupabaseEnv)('search', () => {
   it(
     'ranks the semantically closest chunk first and excludes non-ready sources',
     async () => {
-      const user = createAnonClient();
-      expect((await user.auth.signInAnonymously()).error).toBeNull();
+      const user = await createPrimaryTestClient();
 
       const { data: notebook, error: notebookError } = await user
         .from('notebooks')

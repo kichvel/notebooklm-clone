@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterAll, describe, expect, it } from 'vitest';
-import { createClient } from '@supabase/supabase-js';
 import { createServiceClient } from '@/lib/supabase/server';
+import { createPrimaryTestClient } from '@/lib/supabase/test-helpers';
 import { embed } from '@/lib/providers/openai';
 import { askQuestion, REFUSAL_TEXT } from './index';
 
@@ -14,14 +14,6 @@ const hasRealEnv = Boolean(
 describe.skipIf(!hasRealEnv)('askQuestion', () => {
   const createdNotebookIds: string[] = [];
 
-  function createAnonClient() {
-    return createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      { auth: { persistSession: false, autoRefreshToken: false } },
-    );
-  }
-
   afterAll(async () => {
     if (createdNotebookIds.length === 0) return;
     const service = createServiceClient();
@@ -31,8 +23,7 @@ describe.skipIf(!hasRealEnv)('askQuestion', () => {
   it(
     'answers a supported question with a valid citation and refuses an unsupported one',
     async () => {
-      const user = createAnonClient();
-      expect((await user.auth.signInAnonymously()).error).toBeNull();
+      const user = await createPrimaryTestClient();
 
       const { data: notebook, error: notebookError } = await user
         .from('notebooks')
