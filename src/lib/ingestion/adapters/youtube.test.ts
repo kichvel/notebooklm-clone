@@ -1,5 +1,4 @@
 // @vitest-environment node
-import { Readable } from 'node:stream';
 import { NonRetriableError } from 'inngest';
 import { describe, expect, it, vi } from 'vitest';
 import { YoutubeTranscript, YoutubeTranscriptDisabledError } from 'youtube-transcript';
@@ -10,13 +9,29 @@ vi.mock('youtube-transcript', async () => {
   return { ...actual, YoutubeTranscript: { fetchTranscript: vi.fn() } };
 });
 
-vi.mock('@distube/ytdl-core', () => ({
-  default: Object.assign(vi.fn(), { getInfo: vi.fn() }),
+const { downloadMock } = vi.hoisted(() => ({ downloadMock: vi.fn() }));
+vi.mock('youtubei.js', () => ({
+  Innertube: { create: vi.fn().mockResolvedValue({ download: downloadMock }) },
 }));
 vi.mock('@/lib/providers/openai', () => ({
   transcribeAudio: vi.fn(),
   MAX_TRANSCRIPTION_AUDIO_BYTES: 25 * 1024 * 1024,
 }));
+
+function streamOf(...byteLengths: number[]) {
+  let i = 0;
+  return {
+    getReader: () => ({
+      read: async () => {
+        if (i >= byteLengths.length) return { done: true, value: undefined };
+        const value = new Uint8Array(byteLengths[i]);
+        i += 1;
+        return { done: false, value };
+      },
+      cancel: async () => {},
+    }),
+  };
+}
 
 describe('extractVideoId', () => {
   it.each([
@@ -37,9 +52,7 @@ describe('youtubeAdapter', () => {
     vi.mocked(YoutubeTranscript.fetchTranscript).mockRejectedValue(
       new YoutubeTranscriptDisabledError('abc123XYZ_-'),
     );
-    const ytdl = (await import('@distube/ytdl-core')).default;
-    vi.mocked(ytdl.getInfo).mockResolvedValue({} as never);
-    vi.mocked(ytdl).mockReturnValue(Readable.from([Buffer.from('a'.repeat(1000))]) as never);
+    downloadMock.mockResolvedValue(streamOf(1000));
     const { transcribeAudio } = await import('@/lib/providers/openai');
     vi.mocked(transcribeAudio).mockResolvedValue([]);
 
@@ -70,9 +83,7 @@ describe('youtubeAdapter', () => {
     vi.mocked(YoutubeTranscript.fetchTranscript).mockRejectedValue(
       new YoutubeTranscriptDisabledError('abc123XYZ_-'),
     );
-    const ytdl = (await import('@distube/ytdl-core')).default;
-    vi.mocked(ytdl.getInfo).mockResolvedValue({} as never);
-    vi.mocked(ytdl).mockReturnValue(Readable.from([Buffer.from('a'.repeat(1000))]) as never);
+    downloadMock.mockResolvedValue(streamOf(1000));
     const { transcribeAudio } = await import('@/lib/providers/openai');
     vi.mocked(transcribeAudio).mockResolvedValue([{ start: 0, text: 'Fallback speech' }]);
 
@@ -87,9 +98,7 @@ describe('youtubeAdapter', () => {
 
   it('falls back to audio transcription when the transcript resolves with zero cues', async () => {
     vi.mocked(YoutubeTranscript.fetchTranscript).mockResolvedValue([]);
-    const ytdl = (await import('@distube/ytdl-core')).default;
-    vi.mocked(ytdl.getInfo).mockResolvedValue({} as never);
-    vi.mocked(ytdl).mockReturnValue(Readable.from([Buffer.from('a'.repeat(1000))]) as never);
+    downloadMock.mockResolvedValue(streamOf(1000));
     const { transcribeAudio } = await import('@/lib/providers/openai');
     vi.mocked(transcribeAudio).mockResolvedValue([{ start: 0, text: 'Fallback speech' }]);
 
@@ -106,9 +115,7 @@ describe('youtubeAdapter', () => {
     vi.mocked(YoutubeTranscript.fetchTranscript).mockRejectedValue(
       new YoutubeTranscriptDisabledError('abc123XYZ_-'),
     );
-    const ytdl = (await import('@distube/ytdl-core')).default;
-    vi.mocked(ytdl.getInfo).mockResolvedValue({} as never);
-    vi.mocked(ytdl).mockReturnValue(Readable.from([Buffer.alloc(26 * 1024 * 1024)]) as never);
+    downloadMock.mockResolvedValue(streamOf(26 * 1024 * 1024));
 
     await expect(
       youtubeAdapter.parse(undefined as never, {

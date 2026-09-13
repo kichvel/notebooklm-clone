@@ -1,5 +1,5 @@
 import 'server-only';
-import ytdl from '@distube/ytdl-core';
+import { Innertube } from 'youtubei.js';
 import { NonRetriableError } from 'inngest';
 import {
   YoutubeTranscript,
@@ -20,16 +20,24 @@ export function extractVideoId(url: string): string | null {
 }
 
 async function downloadLowestBitrateAudio(videoId: string): Promise<Buffer> {
-  const stream = ytdl(videoId, { filter: 'audioonly', quality: 'lowestaudio' });
+  const innertube = await Innertube.create();
+  const stream = await innertube.download(videoId, {
+    type: 'audio',
+    quality: 'bestefficiency',
+    format: 'any',
+  });
+  const reader = stream.getReader();
   const chunks: Buffer[] = [];
   let total = 0;
-  for await (const chunk of stream) {
-    total += chunk.length;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
     if (total > MAX_TRANSCRIPTION_AUDIO_BYTES) {
-      stream.destroy();
+      await reader.cancel();
       throw new NonRetriableError('Video audio exceeds the 25MB transcription limit');
     }
-    chunks.push(chunk);
+    chunks.push(Buffer.from(value));
   }
   return Buffer.concat(chunks);
 }
