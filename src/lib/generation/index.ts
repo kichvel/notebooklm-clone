@@ -19,7 +19,15 @@ export interface Citation {
   chunkIndex: number | null;
   pageNumber: number | null;
   section: string | null;
+  startSeconds: number | null;
+  sourceUrl: string | null;
   content: string;
+}
+
+export function buildYoutubeTimestampUrl(originUrl: string, startSeconds: number): string {
+  const url = new URL(originUrl);
+  url.searchParams.set('t', `${Math.floor(startSeconds)}s`);
+  return url.toString();
 }
 
 export interface AskQuestionResult {
@@ -86,10 +94,10 @@ export async function askQuestion(
   const citedSourceIds = [...new Set([...validLabels.values()].map((r) => r.sourceId))];
   const { data: sources, error: sourcesError } = await supabase
     .from('sources')
-    .select('id, title')
+    .select('id, title, type, origin_url')
     .in('id', citedSourceIds);
   if (sourcesError) throw sourcesError;
-  const titleById = new Map((sources ?? []).map((s) => [s.id as string, s.title as string]));
+  const sourceById = new Map((sources ?? []).map((s) => [s.id as string, s]));
 
   const selectedSourceIds = [...new Set(results.map((r) => r.sourceId))];
   const { data: assistantMessage, error: messageError } = await supabase
@@ -105,17 +113,26 @@ export async function askQuestion(
     .single();
   if (messageError) throw messageError;
 
-  const citationRows = [...validLabels.entries()].map(([label, r]) => ({
-    message_id: assistantMessage.id,
-    label,
-    source_id: r.sourceId,
-    chunk_id: r.chunkId,
-    source_title: titleById.get(r.sourceId) ?? 'Untitled source',
-    chunk_index: r.chunkIndex,
-    page_number: r.pageNumber,
-    section: r.section,
-    content_snapshot: r.content,
-  }));
+  const citationRows = [...validLabels.entries()].map(([label, r]) => {
+    const source = sourceById.get(r.sourceId);
+    const sourceUrl =
+      source?.type === 'youtube' && source.origin_url && r.startSeconds !== null
+        ? buildYoutubeTimestampUrl(source.origin_url as string, r.startSeconds)
+        : null;
+    return {
+      message_id: assistantMessage.id,
+      label,
+      source_id: r.sourceId,
+      chunk_id: r.chunkId,
+      source_title: (source?.title as string) ?? 'Untitled source',
+      chunk_index: r.chunkIndex,
+      page_number: r.pageNumber,
+      section: r.section,
+      start_seconds: r.startSeconds,
+      source_url: sourceUrl,
+      content_snapshot: r.content,
+    };
+  });
   const { error: citationsError } = await supabase.from('message_citations').insert(citationRows);
   if (citationsError) throw citationsError;
 
@@ -130,6 +147,8 @@ export async function askQuestion(
       chunkIndex: row.chunk_index,
       pageNumber: row.page_number,
       section: row.section,
+      startSeconds: row.start_seconds,
+      sourceUrl: row.source_url,
       content: row.content_snapshot,
     })),
   };

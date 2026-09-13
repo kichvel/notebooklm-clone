@@ -17,6 +17,8 @@ const messageWithCitation: Message = {
       chunkIndex: 0,
       pageNumber: null,
       section: null,
+      startSeconds: null,
+      sourceUrl: null,
       content: 'Cats are small carnivorous mammals.',
     },
   ],
