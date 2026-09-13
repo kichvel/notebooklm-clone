@@ -8,23 +8,23 @@
 
 ## Files
 
-| Action | Path | Purpose |
-|--------|------|---------|
-| Create | `package.json`, `tsconfig.json`, `next.config.ts`, `tailwind.config.ts`, `postcss.config.mjs` | Project init via create-next-app |
-| Create | `src/app/layout.tsx`, `src/app/page.tsx`, `src/app/globals.css` | Default App Router shell |
-| Modify | `.eslintrc.json` / `eslint.config.mjs` | Add Prettier integration |
-| Create | `.prettierrc.json`, `.prettierignore` | Formatting config |
-| Create | `vitest.config.ts`, `src/app/page.test.tsx` | Unit/integration test infra + smoke test |
-| Create | `playwright.config.ts`, `e2e/smoke.spec.ts` | E2E test infra + smoke test |
-| Create | `src/lib/supabase/client.ts`, `src/lib/supabase/server.ts` | Supabase JS client wiring (browser + server) |
-| Create | `supabase/config.toml`, `supabase/migrations/.gitkeep` | Supabase CLI scaffold for migrations |
-| Create | `src/lib/inngest/client.ts`, `src/app/api/inngest/route.ts` | Inngest client + serve route, no functions |
-| Create | `src/lib/providers/index.ts` | Empty OpenAI provider placeholder |
-| Create | `src/lib/observability/index.ts` | Empty Langfuse placeholder |
-| Create | `src/lib/notebooks/index.ts`, `src/lib/sources/index.ts`, `src/lib/ingestion/index.ts`, `src/lib/retrieval/index.ts`, `src/lib/generation/index.ts`, `src/lib/citations/index.ts` | Domain module placeholders |
-| Create | `.env.example` | Documented placeholder env vars for all services |
-| Create | `.github/workflows/ci.yml` | CI: install, lint, typecheck, unit test, build |
-| Modify | `README.md` | Setup instructions |
+| Action | Path                                                                                                                                                                              | Purpose                                          |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Create | `package.json`, `tsconfig.json`, `next.config.ts`, `tailwind.config.ts`, `postcss.config.mjs`                                                                                     | Project init via create-next-app                 |
+| Create | `src/app/layout.tsx`, `src/app/page.tsx`, `src/app/globals.css`                                                                                                                   | Default App Router shell                         |
+| Modify | `.eslintrc.json` / `eslint.config.mjs`                                                                                                                                            | Add Prettier integration                         |
+| Create | `.prettierrc.json`, `.prettierignore`                                                                                                                                             | Formatting config                                |
+| Create | `vitest.config.ts`, `src/app/page.test.tsx`                                                                                                                                       | Unit/integration test infra + smoke test         |
+| Create | `playwright.config.ts`, `e2e/smoke.spec.ts`                                                                                                                                       | E2E test infra + smoke test                      |
+| Create | `src/lib/supabase/client.ts`, `src/lib/supabase/server.ts`                                                                                                                        | Supabase JS client wiring (browser + server)     |
+| Create | `supabase/config.toml`, `supabase/migrations/.gitkeep`                                                                                                                            | Supabase CLI scaffold for migrations             |
+| Create | `src/lib/inngest/client.ts`, `src/app/api/inngest/route.ts`                                                                                                                       | Inngest client + serve route, no functions       |
+| Create | `src/lib/providers/index.ts`                                                                                                                                                      | Empty OpenAI provider placeholder                |
+| Create | `src/lib/observability/index.ts`                                                                                                                                                  | Empty Langfuse placeholder                       |
+| Create | `src/lib/notebooks/index.ts`, `src/lib/sources/index.ts`, `src/lib/ingestion/index.ts`, `src/lib/retrieval/index.ts`, `src/lib/generation/index.ts`, `src/lib/citations/index.ts` | Domain module placeholders                       |
+| Create | `.env.example`                                                                                                                                                                    | Documented placeholder env vars for all services |
+| Create | `.github/workflows/ci.yml`                                                                                                                                                        | CI: install, lint, typecheck, unit test, build   |
+| Modify | `README.md`                                                                                                                                                                       | Setup instructions                               |
 
 ---
 
