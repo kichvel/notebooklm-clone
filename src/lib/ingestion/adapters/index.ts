@@ -4,6 +4,7 @@ import { pdfAdapter } from './pdf';
 import { docxAdapter } from './docx';
 import { websiteAdapter } from './website';
 import { youtubeAdapter } from './youtube';
+import { audioAdapter } from './audio';
 import type { SourceAdapter } from './types';
 
 export type { SourceAdapter, SourceBlock, ParseContext } from './types';
@@ -14,6 +15,7 @@ export const adapters: Record<string, SourceAdapter> = {
   docx: docxAdapter,
   website: websiteAdapter,
   youtube: youtubeAdapter,
+  audio: audioAdapter,
 };
 
 export function getAdapter(type: string): SourceAdapter {

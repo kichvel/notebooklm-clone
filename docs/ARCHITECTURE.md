@@ -76,12 +76,13 @@ Keep source and processing identities stable across retries. A notebook owns mes
 
 Authorize an upload destination, upload directly to private Storage, then register the completed upload and enqueue processing. Validate the stored object and limits server-side. URL and pasted-text submissions enter the same pipeline after registration.
 
-An expandable adapter interface produces a common document structure: title, origin, and ordered text blocks with page/section metadata. Initial inputs are PDF, DOCX, TXT/Markdown, copied text, and a public website URL.
+An expandable adapter interface produces a common document structure: title, origin, and ordered text blocks with page/section metadata. Initial inputs are PDF, DOCX, TXT/Markdown, copied text, audio, and a public website URL.
 
 - PDF extraction preserves page boundaries.
 - DOCX preserves headings where available; it does not invent PDF-like page numbers.
 - Text inputs preserve useful section and paragraph structure.
-- Websites extract human-readable text from one public HTML page and retain title and URL. Store a snapshot so later page changes do not alter existing citations.
+- Audio is transcribed via Whisper into timed text blocks.
+- Websites extract human-readable text from one public HTML page and retain title and URL. Store a snapshot so later page changes do not alter existing citations. A YouTube URL without a caption track falls back to downloading and transcribing its audio the same way.
 
 Parser libraries remain to be selected. Unsupported, encrypted, and image-only documents fail with an actionable explanation; OCR is excluded.
 
