@@ -14,16 +14,16 @@
 
 ## Files
 
-| Action | Path | Purpose |
-|--------|------|---------|
+| Action | Path                                                      | Purpose                                                                       |
+| ------ | --------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | Create | `supabase/migrations/<timestamp>_foundational_schema.sql` | Tables, RLS policies, `sources` storage bucket + policies, `vector` extension |
-| Modify | `supabase/config.toml` | Fix stale `project_id = "project-scaffold"` → `"sourcebook"` |
-| Modify | `package.json` | Add `openai` dependency, `dotenv` dev dependency |
-| Modify | `vitest.setup.ts` | Load `.env` via `dotenv` so local tests see real credentials |
-| Create | `src/lib/providers/openai.ts` | Real `embed()` implementation using OpenAI SDK |
-| Modify | `src/lib/providers/index.ts` | Re-export `embed` |
-| Test | `src/lib/providers/openai.test.ts` | Real embedding call, skips without `OPENAI_API_KEY` |
-| Test | `src/lib/supabase/rls.integration.test.ts` | Two-anonymous-session ownership isolation proof, self-cleaning |
+| Modify | `supabase/config.toml`                                    | Fix stale `project_id = "project-scaffold"` → `"sourcebook"`                  |
+| Modify | `package.json`                                            | Add `openai` dependency, `dotenv` dev dependency                              |
+| Modify | `vitest.setup.ts`                                         | Load `.env` via `dotenv` so local tests see real credentials                  |
+| Create | `src/lib/providers/openai.ts`                             | Real `embed()` implementation using OpenAI SDK                                |
+| Modify | `src/lib/providers/index.ts`                              | Re-export `embed`                                                             |
+| Test   | `src/lib/providers/openai.test.ts`                        | Real embedding call, skips without `OPENAI_API_KEY`                           |
+| Test   | `src/lib/supabase/rls.integration.test.ts`                | Two-anonymous-session ownership isolation proof, self-cleaning                |
 
 ---
 
@@ -212,15 +212,11 @@
   import { embed } from './openai';
 
   describe.skipIf(!process.env.OPENAI_API_KEY)('embed', () => {
-    it(
-      'returns a 1536-dimension embedding vector',
-      async () => {
-        const vector = await embed('Sourcebook is a source-grounded AI knowledge workspace.');
-        expect(vector).toHaveLength(1536);
-        expect(vector.every((n) => typeof n === 'number')).toBe(true);
-      },
-      15000,
-    );
+    it('returns a 1536-dimension embedding vector', async () => {
+      const vector = await embed('Sourcebook is a source-grounded AI knowledge workspace.');
+      expect(vector).toHaveLength(1536);
+      expect(vector.every((n) => typeof n === 'number')).toBe(true);
+    }, 15000);
   });
   ```
 - [ ] Run `npm run test` — confirm the `embed` test is **not** skipped (real `.env` key present) and passes
@@ -257,48 +253,41 @@
       await service.from('notebooks').delete().in('id', createdNotebookIds);
     });
 
-    it(
-      "prevents one anonymous user from reading or modifying another user's notebook",
-      async () => {
-        const userA = createAnonClient();
-        const userB = createAnonClient();
+    it("prevents one anonymous user from reading or modifying another user's notebook", async () => {
+      const userA = createAnonClient();
+      const userB = createAnonClient();
 
-        expect((await userA.auth.signInAnonymously()).error).toBeNull();
-        expect((await userB.auth.signInAnonymously()).error).toBeNull();
+      expect((await userA.auth.signInAnonymously()).error).toBeNull();
+      expect((await userB.auth.signInAnonymously()).error).toBeNull();
 
-        const { data: notebookA, error: insertError } = await userA
-          .from('notebooks')
-          .insert({ title: 'User A notebook' })
-          .select()
-          .single();
-        expect(insertError).toBeNull();
-        createdNotebookIds.push(notebookA!.id);
+      const { data: notebookA, error: insertError } = await userA
+        .from('notebooks')
+        .insert({ title: 'User A notebook' })
+        .select()
+        .single();
+      expect(insertError).toBeNull();
+      createdNotebookIds.push(notebookA!.id);
 
-        const { data: readAsB } = await userB.from('notebooks').select().eq('id', notebookA!.id);
-        expect(readAsB).toEqual([]);
+      const { data: readAsB } = await userB.from('notebooks').select().eq('id', notebookA!.id);
+      expect(readAsB).toEqual([]);
 
-        const { data: updateAsB } = await userB
-          .from('notebooks')
-          .update({ title: 'hijacked' })
-          .eq('id', notebookA!.id)
-          .select();
-        expect(updateAsB).toEqual([]);
+      const { data: updateAsB } = await userB
+        .from('notebooks')
+        .update({ title: 'hijacked' })
+        .eq('id', notebookA!.id)
+        .select();
+      expect(updateAsB).toEqual([]);
 
-        const { data: deleteAsB } = await userB
-          .from('notebooks')
-          .delete()
-          .eq('id', notebookA!.id)
-          .select();
-        expect(deleteAsB).toEqual([]);
+      const { data: deleteAsB } = await userB
+        .from('notebooks')
+        .delete()
+        .eq('id', notebookA!.id)
+        .select();
+      expect(deleteAsB).toEqual([]);
 
-        const { data: stillExists } = await userA
-          .from('notebooks')
-          .select()
-          .eq('id', notebookA!.id);
-        expect(stillExists).toHaveLength(1);
-      },
-      20000,
-    );
+      const { data: stillExists } = await userA.from('notebooks').select().eq('id', notebookA!.id);
+      expect(stillExists).toHaveLength(1);
+    }, 20000);
   });
   ```
 - [ ] Run `npm run test` — confirm the RLS test is **not** skipped and passes

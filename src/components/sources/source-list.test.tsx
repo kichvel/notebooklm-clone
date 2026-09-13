@@ -5,7 +5,14 @@ import { SourceList } from './source-list';
 import type { SourceSummary } from './source-item';
 
 const sources: SourceSummary[] = [
-  { id: '1', title: 'a.pdf', status: 'failed', failure_reason: 'bad file', type: 'pdf', created_at: '' },
+  {
+    id: '1',
+    title: 'a.pdf',
+    status: 'failed',
+    failure_reason: 'bad file',
+    type: 'pdf',
+    created_at: '',
+  },
   { id: '2', title: 'b.pdf', status: 'ready', failure_reason: null, type: 'pdf', created_at: '' },
   { id: '3', title: 'c.pdf', status: 'ready', failure_reason: null, type: 'pdf', created_at: '' },
 ];
@@ -56,7 +63,13 @@ describe('SourceList', () => {
 
   it('shows an empty state when there are no sources', () => {
     render(
-      <SourceList sources={[]} selectedIds={new Set()} onSelectionChange={vi.fn()} onRetry={vi.fn()} onDelete={vi.fn()} />,
+      <SourceList
+        sources={[]}
+        selectedIds={new Set()}
+        onSelectionChange={vi.fn()}
+        onRetry={vi.fn()}
+        onDelete={vi.fn()}
+      />,
     );
     expect(screen.getByText(/saved sources will appear here/i)).toBeInTheDocument();
   });

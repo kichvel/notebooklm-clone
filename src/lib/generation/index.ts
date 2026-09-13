@@ -3,7 +3,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { embed, generate } from '@/lib/providers/openai';
 import { search } from '@/lib/retrieval';
 
-export const REFUSAL_TEXT = "I don't have enough information in the selected sources to answer that.";
+export const REFUSAL_TEXT =
+  "I don't have enough information in the selected sources to answer that.";
 
 export interface AskQuestionParams {
   notebookId: string;
@@ -37,10 +38,18 @@ function buildSystemPrompt(passageCount: number): string {
   ].join('\n');
 }
 
-async function persistRefusal(supabase: SupabaseClient, notebookId: string): Promise<AskQuestionResult> {
+async function persistRefusal(
+  supabase: SupabaseClient,
+  notebookId: string,
+): Promise<AskQuestionResult> {
   const { data, error } = await supabase
     .from('messages')
-    .insert({ notebook_id: notebookId, role: 'assistant', content: REFUSAL_TEXT, status: 'refused' })
+    .insert({
+      notebook_id: notebookId,
+      role: 'assistant',
+      content: REFUSAL_TEXT,
+      status: 'refused',
+    })
     .select()
     .single();
   if (error) throw error;
@@ -71,7 +80,8 @@ export async function askQuestion(
     const n = Number(match[1]);
     if (n >= 1 && n <= results.length) validLabels.set(n, results[n - 1]);
   }
-  if (rawAnswer === REFUSAL_TEXT || validLabels.size === 0) return persistRefusal(supabase, notebookId);
+  if (rawAnswer === REFUSAL_TEXT || validLabels.size === 0)
+    return persistRefusal(supabase, notebookId);
 
   const citedSourceIds = [...new Set([...validLabels.values()].map((r) => r.sourceId))];
   const { data: sources, error: sourcesError } = await supabase

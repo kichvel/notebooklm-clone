@@ -1,6 +1,12 @@
 'use client';
 
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet';
 
 export interface Citation {
   label: number;
@@ -33,7 +39,9 @@ export function CitationDrawer({
           <>
             <SheetHeader>
               <SheetTitle>{citation.sourceTitle}</SheetTitle>
-              {citationLocation(citation) && <SheetDescription>{citationLocation(citation)}</SheetDescription>}
+              {citationLocation(citation) && (
+                <SheetDescription>{citationLocation(citation)}</SheetDescription>
+              )}
             </SheetHeader>
             <p className="whitespace-pre-wrap px-4 text-sm">{citation.content}</p>
           </>

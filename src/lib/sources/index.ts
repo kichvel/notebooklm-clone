@@ -34,7 +34,10 @@ export async function createPastedTextSource(
   if (updateError) throw updateError;
 
   try {
-    await inngest.send({ name: 'sourcebook/source.ingest.requested', data: { sourceId: source.id } });
+    await inngest.send({
+      name: 'sourcebook/source.ingest.requested',
+      data: { sourceId: source.id },
+    });
   } catch {
     // Per ARCHITECTURE.md §6/§12: a completed upload whose enqueue fails stays visibly
     // failed and retryable, rather than the request throwing and losing the registered source.

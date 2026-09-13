@@ -11,7 +11,10 @@ export interface ResolvedCitation {
   content: string;
 }
 
-export async function resolveCitations(supabase: SupabaseClient, messageId: string): Promise<ResolvedCitation[]> {
+export async function resolveCitations(
+  supabase: SupabaseClient,
+  messageId: string,
+): Promise<ResolvedCitation[]> {
   const { data, error } = await supabase
     .from('message_citations')
     .select('label, source_id, source_title, chunk_index, page_number, section, content_snapshot')

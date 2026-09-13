@@ -21,7 +21,13 @@ export async function embed(text: string): Promise<number[]> {
   return response.data[0].embedding;
 }
 
-export async function generate({ system, prompt }: { system: string; prompt: string }): Promise<string> {
+export async function generate({
+  system,
+  prompt,
+}: {
+  system: string;
+  prompt: string;
+}): Promise<string> {
   const response = await getClient().chat.completions.create({
     model: GENERATION_MODEL,
     temperature: 0,

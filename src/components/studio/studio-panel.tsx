@@ -5,7 +5,12 @@ import { SparklesIcon, BookOpenIcon, LayersIcon, HelpCircleIcon } from 'lucide-r
 import { FeatureCard } from './feature-card';
 import { GenerationOutput, type StudioFeature } from './generation-output';
 
-const FEATURES: { feature: StudioFeature; label: string; icon: typeof BookOpenIcon; tint: 'blue' | 'green' | 'purple' }[] = [
+const FEATURES: {
+  feature: StudioFeature;
+  label: string;
+  icon: typeof BookOpenIcon;
+  tint: 'blue' | 'green' | 'purple';
+}[] = [
   { feature: 'study_guide', label: 'Study guide', icon: BookOpenIcon, tint: 'blue' },
   { feature: 'flashcards', label: 'Flashcards', icon: LayersIcon, tint: 'purple' },
   { feature: 'quiz', label: 'Quiz', icon: HelpCircleIcon, tint: 'green' },

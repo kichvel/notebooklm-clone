@@ -6,22 +6,39 @@ import { Skeleton } from '@/components/ui/skeleton';
 export type StudioFeature = 'study_guide' | 'flashcards' | 'quiz';
 
 const FLASHCARDS = [
-  { front: 'What is the main topic of these sources?', back: 'A concise synthesis of the notebook’s sources.' },
-  { front: 'What is a key term worth remembering?', back: 'The specific term highlighted across your sources.' },
+  {
+    front: 'What is the main topic of these sources?',
+    back: 'A concise synthesis of the notebook’s sources.',
+  },
+  {
+    front: 'What is a key term worth remembering?',
+    back: 'The specific term highlighted across your sources.',
+  },
   { front: 'What open question remains?', back: 'A question the sources do not fully answer yet.' },
 ];
 
 const QUIZ = [
-  { question: 'Which statement best reflects the sources?', options: ['Option A', 'Option B', 'Option C'] },
-  { question: 'What is emphasized most across the sources?', options: ['Option A', 'Option B', 'Option C'] },
-  { question: 'Which claim would need more evidence?', options: ['Option A', 'Option B', 'Option C'] },
+  {
+    question: 'Which statement best reflects the sources?',
+    options: ['Option A', 'Option B', 'Option C'],
+  },
+  {
+    question: 'What is emphasized most across the sources?',
+    options: ['Option A', 'Option B', 'Option C'],
+  },
+  {
+    question: 'Which claim would need more evidence?',
+    options: ['Option A', 'Option B', 'Option C'],
+  },
 ];
 
 function StudyGuideOutput() {
   return (
     <div className="flex flex-col gap-3 text-sm">
       <h3 className="font-medium">Study guide</h3>
-      <p className="text-muted-foreground">A concise study guide distilled from your selected sources.</p>
+      <p className="text-muted-foreground">
+        A concise study guide distilled from your selected sources.
+      </p>
       <ul className="list-disc pl-5">
         <li>Key concept one, with supporting detail from your sources.</li>
         <li>Key concept two, with supporting detail from your sources.</li>
@@ -67,7 +84,9 @@ function QuizOutput() {
   return (
     <div className="flex flex-col gap-3 text-sm">
       <h3 className="font-medium">Quiz</h3>
-      <p className="text-muted-foreground">Sample questions generated from your selected sources.</p>
+      <p className="text-muted-foreground">
+        Sample questions generated from your selected sources.
+      </p>
       <ol className="flex flex-col gap-3 pl-4">
         {QUIZ.map((item, i) => (
           <li key={i} className="list-decimal">

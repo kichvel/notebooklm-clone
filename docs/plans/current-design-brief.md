@@ -8,6 +8,7 @@
 This is the first end-to-end vertical slice, built on top of three already-merged prep slices: the schema/RLS/storage/provider plumbing, the RLS-enforcing retrieval query, and the real Inngest ingestion workflow (pasted_text only). This slice wires those pieces together with two new domain modules (`generation`, `citations`), two new tables (`messages`, `message_citations`), a handful of API routes, and minimal UI. Everything uses real Supabase/OpenAI calls, consistent with every prep slice so far.
 
 Deliberate scope cuts from the full architecture spec (`docs/ARCHITECTURE.md` §8), confirmed with the user:
+
 - No PDF parsing yet — pasted_text only (PDF adapter is a fast-follow).
 - No deployment — local (`npm run dev`) only.
 - No real token streaming — synchronous request/response; answer + citations render once complete.

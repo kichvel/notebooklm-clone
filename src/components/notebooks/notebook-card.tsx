@@ -93,7 +93,9 @@ export function NotebookCard({
         <NotebookIcon className="size-6 text-primary" />
         <div className="flex flex-col gap-1">
           <span className="line-clamp-2 font-medium">{notebook.title}</span>
-          <span className="text-xs text-muted-foreground">{formatRelativeTime(notebook.updated_at)}</span>
+          <span className="text-xs text-muted-foreground">
+            {formatRelativeTime(notebook.updated_at)}
+          </span>
         </div>
       </button>
 

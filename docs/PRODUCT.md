@@ -38,10 +38,11 @@ Each notebook contains one persistent conversation. Conversation management is i
 
 ### Notebook workspace
 
-The workspace uses a focused two-pane layout inspired by NotebookLM:
+The workspace uses a three-column layout inspired by NotebookLM:
 
 - **Sources panel:** add, inspect, select, deselect, retry, and delete sources.
 - **Chat panel:** notebook overview, key topics, conversation history, question input, answers, and citations.
+- **Studio panel:** on-demand generation of a study guide, flashcards, or a quiz from the notebook's sources. The UI for these three is in place; generation logic is planned but not yet implemented.
 
 The source panel includes a **Select all** control and an individual checkbox for each source. Selection changes affect future questions only.
 
@@ -127,7 +128,7 @@ The following are intentionally excluded from the seven-day product:
 - Sharing and permissions
 - Notes and saved answer excerpts
 - Audio or video overviews
-- Study guides and other generated artifact types
+- Mind maps, reports, infographics, data tables, and slide decks
 - Web search, crawling, and autonomous research
 - Google Drive, cloud-storage, or third-party content connectors
 - Image OCR or image understanding

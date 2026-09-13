@@ -12,27 +12,27 @@ Scope cuts confirmed with the user (see `docs/plans/current-design-brief.md`): p
 
 ## Files
 
-| Action | Path | Purpose |
-|--------|------|---------|
-| Create | `supabase/migrations/20260913160000_messages_and_citations.sql` | `messages` + `message_citations` tables, RLS |
-| Test | `src/lib/supabase/messages-rls.integration.test.ts` | Ownership isolation for messages/citations |
-| Modify | `src/lib/providers/openai.ts` | Add `generate()` |
-| Modify | `src/lib/providers/index.ts` | Export `generate` |
-| Modify | `src/lib/generation/index.ts` | `askQuestion()` — retrieve, generate, validate citations, persist |
-| Modify | `src/lib/citations/index.ts` | `resolveCitations()` |
-| Test | `src/lib/generation/askQuestion.integration.test.ts` | Real grounded-answer + refusal paths |
-| Modify | `src/lib/supabase/server.ts` | Add SSR-aware `createClient()` (RLS-enforcing, cookie-based) |
-| Modify | `src/lib/notebooks/index.ts` | `createNotebook()` |
-| Modify | `src/lib/sources/index.ts` | `createPastedTextSource()` |
-| Test | `src/lib/sources/createPastedTextSource.integration.test.ts` | Creates source, runs it through `ingestSource` via `@inngest/test`, ends `ready` |
-| Create | `src/app/api/notebooks/route.ts` | `POST` create notebook |
-| Create | `src/app/api/notebooks/[notebookId]/sources/route.ts` | `POST` add pasted-text source, `GET` list sources |
-| Create | `src/app/api/notebooks/[notebookId]/messages/route.ts` | `POST` ask question, `GET` chat history |
-| Create | `src/app/session-provider.tsx` | Client component: anonymous sign-in bootstrap |
-| Modify | `src/app/layout.tsx` | Wrap children in `SessionProvider` |
-| Modify | `src/app/page.tsx` | "New notebook" landing action |
-| Create | `src/app/notebooks/[notebookId]/page.tsx` | Thin server page |
-| Create | `src/app/notebooks/[notebookId]/notebook-workspace.tsx` | Client component: source upload/status + chat + citation panel |
+| Action | Path                                                            | Purpose                                                                          |
+| ------ | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Create | `supabase/migrations/20260913160000_messages_and_citations.sql` | `messages` + `message_citations` tables, RLS                                     |
+| Test   | `src/lib/supabase/messages-rls.integration.test.ts`             | Ownership isolation for messages/citations                                       |
+| Modify | `src/lib/providers/openai.ts`                                   | Add `generate()`                                                                 |
+| Modify | `src/lib/providers/index.ts`                                    | Export `generate`                                                                |
+| Modify | `src/lib/generation/index.ts`                                   | `askQuestion()` — retrieve, generate, validate citations, persist                |
+| Modify | `src/lib/citations/index.ts`                                    | `resolveCitations()`                                                             |
+| Test   | `src/lib/generation/askQuestion.integration.test.ts`            | Real grounded-answer + refusal paths                                             |
+| Modify | `src/lib/supabase/server.ts`                                    | Add SSR-aware `createClient()` (RLS-enforcing, cookie-based)                     |
+| Modify | `src/lib/notebooks/index.ts`                                    | `createNotebook()`                                                               |
+| Modify | `src/lib/sources/index.ts`                                      | `createPastedTextSource()`                                                       |
+| Test   | `src/lib/sources/createPastedTextSource.integration.test.ts`    | Creates source, runs it through `ingestSource` via `@inngest/test`, ends `ready` |
+| Create | `src/app/api/notebooks/route.ts`                                | `POST` create notebook                                                           |
+| Create | `src/app/api/notebooks/[notebookId]/sources/route.ts`           | `POST` add pasted-text source, `GET` list sources                                |
+| Create | `src/app/api/notebooks/[notebookId]/messages/route.ts`          | `POST` ask question, `GET` chat history                                          |
+| Create | `src/app/session-provider.tsx`                                  | Client component: anonymous sign-in bootstrap                                    |
+| Modify | `src/app/layout.tsx`                                            | Wrap children in `SessionProvider`                                               |
+| Modify | `src/app/page.tsx`                                              | "New notebook" landing action                                                    |
+| Create | `src/app/notebooks/[notebookId]/page.tsx`                       | Thin server page                                                                 |
+| Create | `src/app/notebooks/[notebookId]/notebook-workspace.tsx`         | Client component: source upload/status + chat + citation panel                   |
 
 ---
 
@@ -103,7 +103,13 @@ Scope cuts confirmed with the user (see `docs/plans/current-design-brief.md`): p
   ```ts
   const GENERATION_MODEL = 'gpt-4o-mini';
 
-  export async function generate({ system, prompt }: { system: string; prompt: string }): Promise<string> {
+  export async function generate({
+    system,
+    prompt,
+  }: {
+    system: string;
+    prompt: string;
+  }): Promise<string> {
     const response = await getClient().chat.completions.create({
       model: GENERATION_MODEL,
       temperature: 0,
@@ -131,7 +137,10 @@ Scope cuts confirmed with the user (see `docs/plans/current-design-brief.md`): p
     content: string;
   }
 
-  export async function resolveCitations(supabase: SupabaseClient, messageId: string): Promise<ResolvedCitation[]> {
+  export async function resolveCitations(
+    supabase: SupabaseClient,
+    messageId: string,
+  ): Promise<ResolvedCitation[]> {
     const { data, error } = await supabase
       .from('message_citations')
       .select('label, source_id, source_title, chunk_index, page_number, section, content_snapshot')
@@ -156,7 +165,8 @@ Scope cuts confirmed with the user (see `docs/plans/current-design-brief.md`): p
   import { embed, generate } from '@/lib/providers/openai';
   import { search } from '@/lib/retrieval';
 
-  export const REFUSAL_TEXT = "I don't have enough information in the selected sources to answer that.";
+  export const REFUSAL_TEXT =
+    "I don't have enough information in the selected sources to answer that.";
 
   export interface AskQuestionParams {
     notebookId: string;
@@ -189,10 +199,18 @@ Scope cuts confirmed with the user (see `docs/plans/current-design-brief.md`): p
     ].join('\n');
   }
 
-  async function persistRefusal(supabase: SupabaseClient, notebookId: string): Promise<AskQuestionResult> {
+  async function persistRefusal(
+    supabase: SupabaseClient,
+    notebookId: string,
+  ): Promise<AskQuestionResult> {
     const { data, error } = await supabase
       .from('messages')
-      .insert({ notebook_id: notebookId, role: 'assistant', content: REFUSAL_TEXT, status: 'refused' })
+      .insert({
+        notebook_id: notebookId,
+        role: 'assistant',
+        content: REFUSAL_TEXT,
+        status: 'refused',
+      })
       .select()
       .single();
     if (error) throw error;
@@ -214,17 +232,23 @@ Scope cuts confirmed with the user (see `docs/plans/current-design-brief.md`): p
 
     const system = buildSystemPrompt(results.length);
     const passagesBlock = results.map((r, i) => `[${i + 1}] ${r.content}`).join('\n\n');
-    const rawAnswer = (await generate({ system, prompt: `Passages:\n${passagesBlock}\n\nQuestion: ${question}` })).trim();
+    const rawAnswer = (
+      await generate({ system, prompt: `Passages:\n${passagesBlock}\n\nQuestion: ${question}` })
+    ).trim();
 
     const validLabels = new Map<number, (typeof results)[number]>();
     for (const match of rawAnswer.matchAll(/\[(\d+)\]/g)) {
       const n = Number(match[1]);
       if (n >= 1 && n <= results.length) validLabels.set(n, results[n - 1]);
     }
-    if (rawAnswer === REFUSAL_TEXT || validLabels.size === 0) return persistRefusal(supabase, notebookId);
+    if (rawAnswer === REFUSAL_TEXT || validLabels.size === 0)
+      return persistRefusal(supabase, notebookId);
 
     const sourceIds = [...new Set([...validLabels.values()].map((r) => r.sourceId))];
-    const { data: sources, error: sourcesError } = await supabase.from('sources').select('id, title').in('id', sourceIds);
+    const { data: sources, error: sourcesError } = await supabase
+      .from('sources')
+      .select('id, title')
+      .in('id', sourceIds);
     if (sourcesError) throw sourcesError;
     const titleById = new Map((sources ?? []).map((s) => [s.id as string, s.title as string]));
 
@@ -275,7 +299,7 @@ Scope cuts confirmed with the user (see `docs/plans/current-design-brief.md`): p
 - [ ] Write `askQuestion.integration.test.ts` (`// @vitest-environment node`), following `search.integration.test.ts`'s pattern: signed-in anon user creates a notebook, a `ready` source, and real-embedded chunks about cats and airplanes directly (bypassing ingestion — retrieval correctness is already proven). Two real calls:
   - `askQuestion(user, { notebookId, question: 'What kind of animal is a domestic cat?' })` → assert `status === 'complete'`, `citations.length >= 1`, a citation's `content` contains `'cat'`, and a `messages`/`message_citations` row exists in the DB.
   - `askQuestion(user, { notebookId, question: 'What is the capital of France?' })` → assert `status === 'refused'`, `answer === REFUSAL_TEXT`, `citations` is empty.
-  Clean up notebook (cascades) via service client in `afterAll`.
+    Clean up notebook (cascades) via service client in `afterAll`.
 - [ ] Run it — confirm it fails first (functions are placeholders), then implement, then confirm it passes
 - [ ] `npm run typecheck && npm run lint`
 - [ ] Commit: `git commit -m "feat: add grounded generation and citation resolution"`
@@ -299,7 +323,9 @@ Scope cuts confirmed with the user (see `docs/plans/current-design-brief.md`): p
           getAll: () => cookieStore.getAll(),
           setAll: (cookiesToSet) => {
             try {
-              cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
+              cookiesToSet.forEach(({ name, value, options }) =>
+                cookieStore.set(name, value, options),
+              );
             } catch {
               // called from a Server Component render; middleware refreshes sessions instead
             }
@@ -315,7 +341,11 @@ Scope cuts confirmed with the user (see `docs/plans/current-design-brief.md`): p
   import type { SupabaseClient } from '@supabase/supabase-js';
 
   export async function createNotebook(supabase: SupabaseClient, title?: string) {
-    const { data, error } = await supabase.from('notebooks').insert(title ? { title } : {}).select().single();
+    const { data, error } = await supabase
+      .from('notebooks')
+      .insert(title ? { title } : {})
+      .select()
+      .single();
     if (error) throw error;
     return data;
   }
@@ -357,7 +387,10 @@ Scope cuts confirmed with the user (see `docs/plans/current-design-brief.md`): p
       .single();
     if (updateError) throw updateError;
 
-    await inngest.send({ name: 'sourcebook/source.ingest.requested', data: { sourceId: source.id } });
+    await inngest.send({
+      name: 'sourcebook/source.ingest.requested',
+      data: { sourceId: source.id },
+    });
 
     return updated;
   }
@@ -379,7 +412,9 @@ Scope cuts confirmed with the user (see `docs/plans/current-design-brief.md`): p
 
   export async function POST() {
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
     const notebook = await createNotebook(supabase);

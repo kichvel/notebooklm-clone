@@ -87,8 +87,8 @@ export function SourceItem({
           <DialogHeader>
             <DialogTitle>Delete &ldquo;{source.title}&rdquo;?</DialogTitle>
             <DialogDescription>
-              This excludes the source from future questions. Existing answers keep the citations they already
-              generated, marked as unavailable.
+              This excludes the source from future questions. Existing answers keep the citations
+              they already generated, marked as unavailable.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

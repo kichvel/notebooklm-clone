@@ -3,7 +3,10 @@ import { createClient } from '@/lib/supabase/server';
 import { askQuestion } from '@/lib/generation';
 import { resolveCitations } from '@/lib/citations';
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ notebookId: string }> }) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ notebookId: string }> },
+) {
   const { notebookId } = await params;
   const supabase = await createClient();
   const {
@@ -16,7 +19,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (typeof question !== 'string' || !question) {
     return NextResponse.json({ error: 'question is required' }, { status: 400 });
   }
-  if (sourceIds !== undefined && (!Array.isArray(sourceIds) || !sourceIds.every((id) => typeof id === 'string'))) {
+  if (
+    sourceIds !== undefined &&
+    (!Array.isArray(sourceIds) || !sourceIds.every((id) => typeof id === 'string'))
+  ) {
     return NextResponse.json({ error: 'sourceIds must be an array of strings' }, { status: 400 });
   }
 
@@ -24,7 +30,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   return NextResponse.json(result, { status: 201 });
 }
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ notebookId: string }> }) {
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ notebookId: string }> },
+) {
   const { notebookId } = await params;
   const supabase = await createClient();
   const {

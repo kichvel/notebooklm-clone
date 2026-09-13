@@ -84,12 +84,16 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
   }
 
   async function handleRetry(sourceId: string) {
-    const response = await fetch(`/api/notebooks/${notebookId}/sources/${sourceId}/retry`, { method: 'POST' });
+    const response = await fetch(`/api/notebooks/${notebookId}/sources/${sourceId}/retry`, {
+      method: 'POST',
+    });
     if (response.ok) await refreshSources();
   }
 
   async function handleDeleteSource(sourceId: string) {
-    const response = await fetch(`/api/notebooks/${notebookId}/sources/${sourceId}`, { method: 'DELETE' });
+    const response = await fetch(`/api/notebooks/${notebookId}/sources/${sourceId}`, {
+      method: 'DELETE',
+    });
     if (response.ok) {
       setSelectedSourceIds((current) => {
         const next = new Set(current);

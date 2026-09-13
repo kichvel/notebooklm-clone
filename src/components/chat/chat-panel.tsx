@@ -16,7 +16,15 @@ export interface Message {
   citations: Citation[];
 }
 
-function AnswerText({ content, citations, onOpenCitation }: { content: string; citations: Citation[]; onOpenCitation: (citation: Citation) => void }) {
+function AnswerText({
+  content,
+  citations,
+  onOpenCitation,
+}: {
+  content: string;
+  citations: Citation[];
+  onOpenCitation: (citation: Citation) => void;
+}) {
   const byLabel = new Map(citations.map((c) => [c.label, c]));
   const parts = content.split(/(\[\d+\])/g);
 
@@ -64,13 +72,23 @@ export function ChatPanel({
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto">
         {messages.length === 0 ? (
-          <WelcomeState hasProcessingSources={hasProcessingSources} onSelectQuestion={onQuestionChange} />
+          <WelcomeState
+            hasProcessingSources={hasProcessingSources}
+            onSelectQuestion={onQuestionChange}
+          />
         ) : (
           <ul className="flex flex-col gap-4 p-4">
             {messages.map((message) => (
-              <li key={message.id} className={message.role === 'user' ? 'self-end font-medium' : 'self-start'}>
+              <li
+                key={message.id}
+                className={message.role === 'user' ? 'self-end font-medium' : 'self-start'}
+              >
                 {message.role === 'assistant' ? (
-                  <AnswerText content={message.content} citations={message.citations} onOpenCitation={setOpenCitation} />
+                  <AnswerText
+                    content={message.content}
+                    citations={message.citations}
+                    onOpenCitation={setOpenCitation}
+                  />
                 ) : (
                   <p className="text-sm">{message.content}</p>
                 )}
@@ -93,7 +111,10 @@ export function ChatPanel({
       </form>
       {askError && <p className="px-4 pb-3 text-sm text-destructive">{askError}</p>}
 
-      <CitationDrawer citation={openCitation} onOpenChange={(open) => !open && setOpenCitation(null)} />
+      <CitationDrawer
+        citation={openCitation}
+        onOpenChange={(open) => !open && setOpenCitation(null)}
+      />
     </div>
   );
 }
