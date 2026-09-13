@@ -59,10 +59,17 @@ export async function createPastedTextSource(
   return enqueueOrMarkFailed(supabase, updated);
 }
 
-const FILE_EXTENSION_TYPE: Record<string, 'pdf' | 'docx'> = {
+const FILE_EXTENSION_TYPE: Record<string, 'pdf' | 'docx' | 'audio'> = {
   pdf: 'pdf',
   docx: 'docx',
+  mp3: 'audio',
+  wav: 'audio',
+  m4a: 'audio',
+  webm: 'audio',
+  ogg: 'audio',
 };
+
+export const MAX_AUDIO_FILE_BYTES = 25 * 1024 * 1024;
 
 export interface CreateFileSourceParams {
   notebookId: string;
@@ -77,6 +84,12 @@ export async function createFileSource(
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
   const type = FILE_EXTENSION_TYPE[ext];
   if (!type) throw new Error(`Unsupported file type: .${ext}`);
+
+  // pdf/docx are size-checked upstream in route.ts; audio is capped here too since
+  // this module is the only place that knows the transcription size limit.
+  if (type === 'audio' && file.size > MAX_AUDIO_FILE_BYTES) {
+    throw new Error('Audio file exceeds the 25MB limit');
+  }
 
   const placeholderTitle = filename.replace(/\.[^.]+$/, '') || filename;
 
