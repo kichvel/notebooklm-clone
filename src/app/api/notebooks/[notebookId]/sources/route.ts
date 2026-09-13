@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createPastedTextSource } from '@/lib/sources';
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ notebookId: string }> }) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ notebookId: string }> },
+) {
   const { notebookId } = await params;
   const supabase = await createClient();
   const {
@@ -20,7 +23,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   return NextResponse.json(source, { status: 201 });
 }
 
-export async function GET(_request: NextRequest, { params }: { params: Promise<{ notebookId: string }> }) {
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ notebookId: string }> },
+) {
   const { notebookId } = await params;
   const supabase = await createClient();
   const {

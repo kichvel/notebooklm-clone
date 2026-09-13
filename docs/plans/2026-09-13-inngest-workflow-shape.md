@@ -16,12 +16,12 @@
 
 ## Files
 
-| Action | Path | Purpose |
-|--------|------|---------|
-| Modify | `src/lib/ingestion/index.ts` | The `ingestSource` Inngest function |
-| Modify | `src/app/api/inngest/route.ts` | Register `ingestSource` in the `functions` array |
-| Modify | `package.json` | `@inngest/test` dev dependency (already installed in this worktree) |
-| Test   | `src/lib/ingestion/ingestSource.test.ts` | Real end-to-end run through all 5 steps |
+| Action | Path                                     | Purpose                                                             |
+| ------ | ---------------------------------------- | ------------------------------------------------------------------- |
+| Modify | `src/lib/ingestion/index.ts`             | The `ingestSource` Inngest function                                 |
+| Modify | `src/app/api/inngest/route.ts`           | Register `ingestSource` in the `functions` array                    |
+| Modify | `package.json`                           | `@inngest/test` dev dependency (already installed in this worktree) |
+| Test   | `src/lib/ingestion/ingestSource.test.ts` | Real end-to-end run through all 5 steps                             |
 
 ---
 
@@ -53,10 +53,12 @@
       .eq('step', step)
       .maybeSingle();
 
-    await supabase.from('processing_steps').upsert(
-      { source_id: sourceId, step, status, attempts: (existing?.attempts ?? 0) + 1 },
-      { onConflict: 'source_id,step' },
-    );
+    await supabase
+      .from('processing_steps')
+      .upsert(
+        { source_id: sourceId, step, status, attempts: (existing?.attempts ?? 0) + 1 },
+        { onConflict: 'source_id,step' },
+      );
   }
 
   export const ingestSource = inngest.createFunction(
@@ -96,7 +98,10 @@
 
       const normalizedText = await step.run('normalize', async () => {
         await upsertProcessingStep(supabase, sourceId, 'normalize', 'in_progress');
-        const normalized = rawText.replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
+        const normalized = rawText
+          .replace(/\r\n/g, '\n')
+          .replace(/[ \t]+/g, ' ')
+          .trim();
         await upsertProcessingStep(supabase, sourceId, 'normalize', 'succeeded');
         return normalized;
       });
@@ -176,8 +181,8 @@
 
   const hasRealEnv = Boolean(
     process.env.NEXT_PUBLIC_SUPABASE_URL &&
-      process.env.SUPABASE_SERVICE_ROLE_KEY &&
-      process.env.OPENAI_API_KEY,
+    process.env.SUPABASE_SERVICE_ROLE_KEY &&
+    process.env.OPENAI_API_KEY,
   );
 
   describe.skipIf(!hasRealEnv)('ingestSource', () => {
@@ -189,84 +194,80 @@
       await service.from('notebooks').delete().in('id', createdNotebookIds);
     });
 
-    it(
-      'runs parse, normalize, chunk, embed, and finalize for a pasted-text source',
-      async () => {
-        const anon = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          { auth: { persistSession: false, autoRefreshToken: false } },
-        );
-        const { data: authData, error: authError } = await anon.auth.signInAnonymously();
-        expect(authError).toBeNull();
+    it('runs parse, normalize, chunk, embed, and finalize for a pasted-text source', async () => {
+      const anon = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        { auth: { persistSession: false, autoRefreshToken: false } },
+      );
+      const { data: authData, error: authError } = await anon.auth.signInAnonymously();
+      expect(authError).toBeNull();
 
-        const service = createServiceClient();
+      const service = createServiceClient();
 
-        const { data: notebook, error: notebookError } = await service
-          .from('notebooks')
-          .insert({ owner_id: authData!.user!.id, title: 'Ingestion test notebook' })
-          .select()
-          .single();
-        expect(notebookError).toBeNull();
-        createdNotebookIds.push(notebook!.id);
+      const { data: notebook, error: notebookError } = await service
+        .from('notebooks')
+        .insert({ owner_id: authData!.user!.id, title: 'Ingestion test notebook' })
+        .select()
+        .single();
+      expect(notebookError).toBeNull();
+      createdNotebookIds.push(notebook!.id);
 
-        const { data: source, error: sourceError } = await service
-          .from('sources')
-          .insert({ notebook_id: notebook!.id, type: 'pasted_text', title: 'Ingestion test source' })
-          .select()
-          .single();
-        expect(sourceError).toBeNull();
+      const { data: source, error: sourceError } = await service
+        .from('sources')
+        .insert({ notebook_id: notebook!.id, type: 'pasted_text', title: 'Ingestion test source' })
+        .select()
+        .single();
+      expect(sourceError).toBeNull();
 
-        const pastedText = [
-          'Domestic cats are small, typically furry, carnivorous mammals kept as pets.',
-          'The Boeing 747 is a wide-body commercial jet airliner.',
-        ].join('\n\n');
+      const pastedText = [
+        'Domestic cats are small, typically furry, carnivorous mammals kept as pets.',
+        'The Boeing 747 is a wide-body commercial jet airliner.',
+      ].join('\n\n');
 
-        const storagePath = `${notebook!.id}/${source!.id}/original.txt`;
-        const { error: uploadError } = await service.storage
-          .from('sources')
-          .upload(storagePath, pastedText, { contentType: 'text/plain' });
-        expect(uploadError).toBeNull();
+      const storagePath = `${notebook!.id}/${source!.id}/original.txt`;
+      const { error: uploadError } = await service.storage
+        .from('sources')
+        .upload(storagePath, pastedText, { contentType: 'text/plain' });
+      expect(uploadError).toBeNull();
 
-        const { error: pathUpdateError } = await service
-          .from('sources')
-          .update({ storage_path: storagePath })
-          .eq('id', source!.id);
-        expect(pathUpdateError).toBeNull();
+      const { error: pathUpdateError } = await service
+        .from('sources')
+        .update({ storage_path: storagePath })
+        .eq('id', source!.id);
+      expect(pathUpdateError).toBeNull();
 
-        const t = new InngestTestEngine({ function: ingestSource });
-        const { result } = await t.execute({
-          events: [{ name: 'sourcebook/source.ingest.requested', data: { sourceId: source!.id } }],
-        });
+      const t = new InngestTestEngine({ function: ingestSource });
+      const { result } = await t.execute({
+        events: [{ name: 'sourcebook/source.ingest.requested', data: { sourceId: source!.id } }],
+      });
 
-        expect(result).toEqual({ sourceId: source!.id, chunkCount: 2 });
+      expect(result).toEqual({ sourceId: source!.id, chunkCount: 2 });
 
-        const { data: finalSource } = await service
-          .from('sources')
-          .select('status')
-          .eq('id', source!.id)
-          .single();
-        expect(finalSource?.status).toBe('ready');
+      const { data: finalSource } = await service
+        .from('sources')
+        .select('status')
+        .eq('id', source!.id)
+        .single();
+      expect(finalSource?.status).toBe('ready');
 
-        const { data: chunks } = await service
-          .from('source_chunks')
-          .select('chunk_index, content, embedding')
-          .eq('source_id', source!.id)
-          .order('chunk_index');
-        expect(chunks).toHaveLength(2);
-        expect(chunks![0].content).toContain('Domestic cats');
-        expect(chunks![1].content).toContain('Boeing 747');
-        expect(chunks![0].embedding).not.toBeNull();
+      const { data: chunks } = await service
+        .from('source_chunks')
+        .select('chunk_index, content, embedding')
+        .eq('source_id', source!.id)
+        .order('chunk_index');
+      expect(chunks).toHaveLength(2);
+      expect(chunks![0].content).toContain('Domestic cats');
+      expect(chunks![1].content).toContain('Boeing 747');
+      expect(chunks![0].embedding).not.toBeNull();
 
-        const { data: steps } = await service
-          .from('processing_steps')
-          .select('step, status, attempts')
-          .eq('source_id', source!.id);
-        expect(steps).toHaveLength(5);
-        expect(steps!.every((s) => s.status === 'succeeded' && s.attempts === 1)).toBe(true);
-      },
-      30000,
-    );
+      const { data: steps } = await service
+        .from('processing_steps')
+        .select('step, status, attempts')
+        .eq('source_id', source!.id);
+      expect(steps).toHaveLength(5);
+      expect(steps!.every((s) => s.status === 'succeeded' && s.attempts === 1)).toBe(true);
+    }, 30000);
   });
   ```
 - [ ] Run `npm run test` — confirm the new `ingestSource` test is **not** skipped and passes

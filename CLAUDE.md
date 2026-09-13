@@ -9,9 +9,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Sourcebook is a source-grounded AI knowledge workspace (a NotebookLM-style product): users upload sources (PDF, DOCX, TXT, pasted text, one public URL) into a notebook, get an auto-generated overview, and ask questions that are answered strictly from retrieved passages with inspectable citations — never from general model knowledge.
 
 The full product/architecture spec lives in `docs/`:
+
 - `docs/PRODUCT.md` — product definition, user journey, MVP scope, non-goals
 - `docs/ARCHITECTURE.md` — system design, data model, ingestion/retrieval/citation pipelines
-- `docs/DECISIONS.md` — ADRs explaining *why* (grounding rules, streaming, revisioning, etc.)
+- `docs/DECISIONS.md` — ADRs explaining _why_ (grounding rules, streaming, revisioning, etc.)
 - `docs/ROADMAP.md` — delivery plan
 
 **Current state: this is a scaffold only.** The project structure and service wiring exist (Next.js app, Supabase/Inngest/OpenAI/Langfuse clients), but no feature logic has been implemented yet — `src/lib/*` domain modules are empty placeholders. Read `docs/ARCHITECTURE.md` before implementing any of them; do not assume behavior described there is already built.
@@ -31,6 +32,7 @@ npm run test:e2e        # Playwright, end-to-end
 ```
 
 Run a single test:
+
 ```bash
 npx vitest run src/app/page.test.tsx   # single Vitest file
 npx vitest run -t "test name"           # by test name
@@ -40,6 +42,7 @@ npx playwright test e2e/smoke.spec.ts    # single Playwright file
 `npm run typecheck` must run `next typegen` before `tsc` — Next.js's App Router generates types (e.g. `LayoutProps`) into the gitignored `.next/types/`, and a bare `tsc --noEmit` fails on a fresh checkout without them. Do not simplify this script back to plain `tsc --noEmit`.
 
 Supabase CLI (migrations only; the JS client always points at the remote project — there is no local dev database):
+
 ```bash
 npx supabase login
 npx supabase link
@@ -52,6 +55,7 @@ CI (`.github/workflows/ci.yml`) runs lint → typecheck → test → build on pu
 ## Architecture
 
 **Stack and responsibilities** (see `docs/ARCHITECTURE.md` §2 for full detail):
+
 - Next.js (App Router) + TypeScript on Vercel — UI, API routes, streaming chat, Inngest handlers
 - Supabase Auth — persistent anonymous browser identity
 - Supabase Postgres + pgvector — authoritative data, job progress, embeddings, citations
@@ -63,6 +67,7 @@ CI (`.github/workflows/ci.yml`) runs lint → typecheck → test → build on pu
 **Domain module boundaries** (`src/lib/`): notebook/source operations, ingestion, retrieval, generation, and citation resolution are kept as separate small server-side modules (`notebooks/`, `sources/`, `ingestion/`, `retrieval/`, `generation/`, `citations/`, plus `providers/` for the OpenAI interface and `observability/` for Langfuse). UI components should consume this application state rather than re-implementing retrieval or permission logic. This separation is a deliberate architectural boundary (`docs/ARCHITECTURE.md` §3), not incidental structure — keep new code inside the module matching its responsibility.
 
 **Non-negotiable product rules to preserve when implementing features** (see `docs/DECISIONS.md` for rationale):
+
 - Answers must be grounded only in retrieved passages from selected, ready sources; insufficient evidence means an explicit refusal, never a fallback to general model knowledge (ADR-005).
 - Deselecting a source affects future questions only; existing answers keep the source context they were generated with. Deleting a source excludes it from retrieval but preserves prior answers, marking affected citations unavailable (`docs/PRODUCT.md`, `docs/ARCHITECTURE.md` §9–10).
 - Row-level security and server-side ownership checks isolate all notebook/source/storage data per anonymous identity; client-provided IDs are never treated as proof of access (`docs/ARCHITECTURE.md` §5).

@@ -34,7 +34,10 @@ export async function createPastedTextSource(
   if (updateError) throw updateError;
 
   try {
-    await inngest.send({ name: 'sourcebook/source.ingest.requested', data: { sourceId: source.id } });
+    await inngest.send({
+      name: 'sourcebook/source.ingest.requested',
+      data: { sourceId: source.id },
+    });
   } catch {
     // Per ARCHITECTURE.md §6/§12: a completed upload whose enqueue fails stays visibly
     // failed and retryable, rather than the request throwing and losing the registered source.
@@ -49,4 +52,37 @@ export async function createPastedTextSource(
   }
 
   return updated;
+}
+
+export async function retrySource(supabase: SupabaseClient, sourceId: string) {
+  const { data: reset, error: resetError } = await supabase
+    .from('sources')
+    .update({ status: 'uploaded', failure_reason: null })
+    .eq('id', sourceId)
+    .select()
+    .single();
+  if (resetError) throw resetError;
+
+  try {
+    await inngest.send({ name: 'sourcebook/source.ingest.requested', data: { sourceId } });
+  } catch {
+    const { data: failed, error: failError } = await supabase
+      .from('sources')
+      .update({ status: 'failed', failure_reason: 'Failed to enqueue ingestion' })
+      .eq('id', sourceId)
+      .select()
+      .single();
+    if (failError) throw failError;
+    return failed;
+  }
+
+  return reset;
+}
+
+export async function deleteSource(supabase: SupabaseClient, sourceId: string) {
+  const { error } = await supabase
+    .from('sources')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', sourceId);
+  if (error) throw error;
 }

@@ -20,12 +20,12 @@ async function upsertProcessingStep(
     .eq('step', step)
     .maybeSingle();
 
-  const attempts = status === 'in_progress' ? (existing?.attempts ?? 0) + 1 : (existing?.attempts ?? 1);
+  const attempts =
+    status === 'in_progress' ? (existing?.attempts ?? 0) + 1 : (existing?.attempts ?? 1);
 
-  await supabase.from('processing_steps').upsert(
-    { source_id: sourceId, step, status, attempts },
-    { onConflict: 'source_id,step' },
-  );
+  await supabase
+    .from('processing_steps')
+    .upsert({ source_id: sourceId, step, status, attempts }, { onConflict: 'source_id,step' });
 }
 
 export const ingestSource = inngest.createFunction(
@@ -64,7 +64,10 @@ export const ingestSource = inngest.createFunction(
 
     const normalizedText = await step.run('normalize', async () => {
       await upsertProcessingStep(supabase, sourceId, 'normalize', 'in_progress');
-      const normalized = rawText.replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
+      const normalized = rawText
+        .replace(/\r\n/g, '\n')
+        .replace(/[ \t]+/g, ' ')
+        .trim();
       await upsertProcessingStep(supabase, sourceId, 'normalize', 'succeeded');
       return normalized;
     });
