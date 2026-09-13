@@ -3,6 +3,7 @@ import { pastedTextAdapter } from './pastedText';
 import { pdfAdapter } from './pdf';
 import { docxAdapter } from './docx';
 import { websiteAdapter } from './website';
+import { youtubeAdapter } from './youtube';
 import type { SourceAdapter } from './types';
 
 export type { SourceAdapter, SourceBlock, ParseContext } from './types';
@@ -12,6 +13,7 @@ export const adapters: Record<string, SourceAdapter> = {
   pdf: pdfAdapter,
   docx: docxAdapter,
   website: websiteAdapter,
+  youtube: youtubeAdapter,
 };
 
 export function getAdapter(type: string): SourceAdapter {
