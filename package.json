@@ -24,6 +24,7 @@
     "server-only": "^0.0.1"
   },
   "devDependencies": {
+    "@inngest/test": "^1.0.0",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^7.0.1",
