@@ -2,9 +2,32 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { inngest } from '@/lib/inngest/client';
 
+type SourceRow = Record<string, unknown> & { id: string; status: string };
+
+// Per ARCHITECTURE.md §6/§12: a completed upload whose enqueue fails stays visibly
+// failed and retryable, rather than the request throwing and losing the registered source.
+async function enqueueOrMarkFailed(supabase: SupabaseClient, source: SourceRow) {
+  try {
+    await inngest.send({
+      name: 'sourcebook/source.ingest.requested',
+      data: { sourceId: source.id },
+    });
+  } catch {
+    const { data: failed, error: failError } = await supabase
+      .from('sources')
+      .update({ status: 'failed', failure_reason: 'Failed to enqueue ingestion' })
+      .eq('id', source.id)
+      .select()
+      .single();
+    if (failError) throw failError;
+    return failed;
+  }
+  return source;
+}
+
 export interface CreatePastedTextSourceParams {
   notebookId: string;
-  title: string;
+  title?: string;
   text: string;
 }
 
@@ -14,7 +37,7 @@ export async function createPastedTextSource(
 ) {
   const { data: source, error: sourceError } = await supabase
     .from('sources')
-    .insert({ notebook_id: notebookId, type: 'pasted_text', title })
+    .insert({ notebook_id: notebookId, type: 'pasted_text', title: title?.trim() || 'Pasted text' })
     .select()
     .single();
   if (sourceError) throw sourceError;
@@ -33,25 +56,110 @@ export async function createPastedTextSource(
     .single();
   if (updateError) throw updateError;
 
-  try {
-    await inngest.send({
-      name: 'sourcebook/source.ingest.requested',
-      data: { sourceId: source.id },
-    });
-  } catch {
-    // Per ARCHITECTURE.md §6/§12: a completed upload whose enqueue fails stays visibly
-    // failed and retryable, rather than the request throwing and losing the registered source.
-    const { data: failed, error: failError } = await supabase
-      .from('sources')
-      .update({ status: 'failed', failure_reason: 'Failed to enqueue ingestion' })
-      .eq('id', source.id)
-      .select()
-      .single();
-    if (failError) throw failError;
-    return failed;
+  return enqueueOrMarkFailed(supabase, updated);
+}
+
+const FILE_EXTENSION_TYPE: Record<string, 'pdf' | 'docx'> = {
+  pdf: 'pdf',
+  docx: 'docx',
+};
+
+export interface CreateFileSourceParams {
+  notebookId: string;
+  filename: string;
+  file: Blob;
+}
+
+export async function createFileSource(
+  supabase: SupabaseClient,
+  { notebookId, filename, file }: CreateFileSourceParams,
+) {
+  const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+  const type = FILE_EXTENSION_TYPE[ext];
+  if (!type) throw new Error(`Unsupported file type: .${ext}`);
+
+  const placeholderTitle = filename.replace(/\.[^.]+$/, '') || filename;
+
+  const { data: source, error: sourceError } = await supabase
+    .from('sources')
+    .insert({ notebook_id: notebookId, type, title: placeholderTitle })
+    .select()
+    .single();
+  if (sourceError) throw sourceError;
+
+  const storagePath = `${notebookId}/${source.id}/original.${ext}`;
+  const { error: uploadError } = await supabase.storage.from('sources').upload(storagePath, file);
+  if (uploadError) throw uploadError;
+
+  const { data: updated, error: updateError } = await supabase
+    .from('sources')
+    .update({ storage_path: storagePath })
+    .eq('id', source.id)
+    .select()
+    .single();
+  if (updateError) throw updateError;
+
+  return enqueueOrMarkFailed(supabase, updated);
+}
+
+export interface CreateWebsiteSourceParams {
+  notebookId: string;
+  url: string;
+}
+
+export async function createWebsiteSource(
+  supabase: SupabaseClient,
+  { notebookId, url }: CreateWebsiteSourceParams,
+) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Unsupported URL scheme');
   }
 
-  return updated;
+  const { data: source, error: sourceError } = await supabase
+    .from('sources')
+    .insert({
+      notebook_id: notebookId,
+      type: 'website',
+      title: parsed.hostname,
+      origin_url: url,
+    })
+    .select()
+    .single();
+  if (sourceError) throw sourceError;
+
+  return enqueueOrMarkFailed(supabase, source);
+}
+
+const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'youtu.be', 'm.youtube.com']);
+
+export interface CreateYoutubeSourceParams {
+  notebookId: string;
+  url: string;
+}
+
+export async function createYoutubeSource(
+  supabase: SupabaseClient,
+  { notebookId, url }: CreateYoutubeSourceParams,
+) {
+  const parsed = new URL(url);
+  if (!YOUTUBE_HOSTS.has(parsed.hostname)) {
+    throw new Error('Unsupported URL: not a YouTube link');
+  }
+
+  const { data: source, error: sourceError } = await supabase
+    .from('sources')
+    .insert({
+      notebook_id: notebookId,
+      type: 'youtube',
+      title: 'YouTube video',
+      origin_url: url,
+    })
+    .select()
+    .single();
+  if (sourceError) throw sourceError;
+
+  return enqueueOrMarkFailed(supabase, source);
 }
 
 export async function retrySource(supabase: SupabaseClient, sourceId: string) {
