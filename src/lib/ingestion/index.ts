@@ -20,8 +20,10 @@ async function upsertProcessingStep(
     .eq('step', step)
     .maybeSingle();
 
+  const attempts = status === 'in_progress' ? (existing?.attempts ?? 0) + 1 : (existing?.attempts ?? 1);
+
   await supabase.from('processing_steps').upsert(
-    { source_id: sourceId, step, status, attempts: (existing?.attempts ?? 0) + 1 },
+    { source_id: sourceId, step, status, attempts },
     { onConflict: 'source_id,step' },
   );
 }
