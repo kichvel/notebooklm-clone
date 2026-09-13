@@ -1,17 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { WorkspaceHeader } from '@/components/workspace/workspace-header';
 import { WorkspaceShell } from '@/components/workspace/workspace-shell';
-
-interface Source {
-  id: string;
-  title: string;
-  type: string;
-  status: 'uploaded' | 'processing' | 'ready' | 'failed';
-  failure_reason: string | null;
-  created_at: string;
-}
+import { SourceList } from '@/components/sources/source-list';
+import { AddSourceDialog } from '@/components/sources/add-source-dialog';
+import type { SourceSummary as Source } from '@/components/sources/source-item';
 
 interface Citation {
   label: number;
@@ -85,9 +79,8 @@ function AnswerText({ content, citations }: { content: string; citations: Citati
 export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
   const [notebookTitle, setNotebookTitle] = useState('Untitled notebook');
   const [sources, setSources] = useState<Source[]>([]);
-  const [title, setTitle] = useState('');
-  const [text, setText] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<Set<string>>(new Set());
+  const knownReadyIds = useRef<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
   const [messages, setMessages] = useState<Message[]>([]);
@@ -105,7 +98,16 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
   async function refreshSources() {
     const response = await fetch(`/api/notebooks/${notebookId}/sources`);
     if (!response.ok) return;
-    setSources(await response.json());
+    const next: Source[] = await response.json();
+    setSources(next);
+
+    const newlyReady = next
+      .filter((s) => s.status === 'ready' && !knownReadyIds.current.has(s.id))
+      .map((s) => s.id);
+    if (newlyReady.length > 0) {
+      setSelectedSourceIds((current) => new Set([...current, ...newlyReady]));
+    }
+    knownReadyIds.current = new Set(next.filter((s) => s.status === 'ready').map((s) => s.id));
   }
 
   async function refreshMessages() {
@@ -130,9 +132,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sources]);
 
-  async function handleAddSource(event: React.FormEvent) {
-    event.preventDefault();
-    setSubmitting(true);
+  async function handleAddSource({ title, text }: { title: string; text: string }) {
     setError(null);
     try {
       const response = await fetch(`/api/notebooks/${notebookId}/sources`, {
@@ -141,13 +141,27 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
         body: JSON.stringify({ title, text }),
       });
       if (!response.ok) throw new Error('Failed to add source');
-      setTitle('');
-      setText('');
       await refreshSources();
-    } catch {
+    } catch (err) {
       setError('Something went wrong adding that source. Please try again.');
-    } finally {
-      setSubmitting(false);
+      throw err;
+    }
+  }
+
+  async function handleRetry(sourceId: string) {
+    const response = await fetch(`/api/notebooks/${notebookId}/sources/${sourceId}/retry`, { method: 'POST' });
+    if (response.ok) await refreshSources();
+  }
+
+  async function handleDeleteSource(sourceId: string) {
+    const response = await fetch(`/api/notebooks/${notebookId}/sources/${sourceId}`, { method: 'DELETE' });
+    if (response.ok) {
+      setSelectedSourceIds((current) => {
+        const next = new Set(current);
+        next.delete(sourceId);
+        return next;
+      });
+      await refreshSources();
     }
   }
 
@@ -159,7 +173,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
       const response = await fetch(`/api/notebooks/${notebookId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question, sourceIds: [...selectedSourceIds] }),
       });
       if (!response.ok) throw new Error('Failed to ask question');
       setQuestion('');
@@ -172,50 +186,19 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
   }
 
   const sourcesPanel = (
-    <section className="flex flex-col gap-3 p-4">
-      <h2 className="text-lg font-medium">Sources</h2>
-      <form onSubmit={handleAddSource} className="flex flex-col gap-2">
-        <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Source title"
-          className="rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700"
-          required
-        />
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Paste text here"
-          rows={6}
-          className="rounded border border-zinc-300 px-3 py-2 dark:border-zinc-700"
-          required
-        />
-        <button
-          type="submit"
-          disabled={submitting}
-          className="self-start rounded-full bg-black px-5 py-2 text-white disabled:opacity-50 dark:bg-white dark:text-black"
-        >
-          {submitting ? 'Adding…' : 'Add source'}
-        </button>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-      </form>
-
-      <ul className="flex flex-col gap-2">
-        {sources.map((source) => (
-          <li
-            key={source.id}
-            className="flex items-center justify-between rounded border border-zinc-200 px-3 py-2 dark:border-zinc-800"
-          >
-            <span>{source.title}</span>
-            <span className="text-sm text-zinc-500">
-              {source.status}
-              {source.status === 'failed' && source.failure_reason ? ` — ${source.failure_reason}` : ''}
-            </span>
-          </li>
-        ))}
-        {sources.length === 0 && <li className="text-sm text-zinc-500">No sources yet.</li>}
-      </ul>
-    </section>
+    <div className="flex flex-col gap-2">
+      <div className="px-3 pt-3">
+        <AddSourceDialog onAdd={handleAddSource} />
+        {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+      </div>
+      <SourceList
+        sources={sources}
+        selectedIds={selectedSourceIds}
+        onSelectionChange={setSelectedSourceIds}
+        onRetry={handleRetry}
+        onDelete={handleDeleteSource}
+      />
+    </div>
   );
 
   const chatPanel = (

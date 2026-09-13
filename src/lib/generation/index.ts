@@ -8,6 +8,7 @@ export const REFUSAL_TEXT = "I don't have enough information in the selected sou
 export interface AskQuestionParams {
   notebookId: string;
   question: string;
+  sourceIds?: string[];
 }
 
 export interface Citation {
@@ -48,7 +49,7 @@ async function persistRefusal(supabase: SupabaseClient, notebookId: string): Pro
 
 export async function askQuestion(
   supabase: SupabaseClient,
-  { notebookId, question }: AskQuestionParams,
+  { notebookId, question, sourceIds }: AskQuestionParams,
 ): Promise<AskQuestionResult> {
   const { error: userMessageError } = await supabase
     .from('messages')
@@ -56,7 +57,7 @@ export async function askQuestion(
   if (userMessageError) throw userMessageError;
 
   const queryEmbedding = await embed(question);
-  const results = await search(supabase, { notebookId, queryEmbedding, matchCount: 8 });
+  const results = await search(supabase, { notebookId, sourceIds, queryEmbedding, matchCount: 8 });
   if (results.length === 0) return persistRefusal(supabase, notebookId);
 
   const system = buildSystemPrompt(results.length);
@@ -72,11 +73,11 @@ export async function askQuestion(
   }
   if (rawAnswer === REFUSAL_TEXT || validLabels.size === 0) return persistRefusal(supabase, notebookId);
 
-  const sourceIds = [...new Set([...validLabels.values()].map((r) => r.sourceId))];
+  const citedSourceIds = [...new Set([...validLabels.values()].map((r) => r.sourceId))];
   const { data: sources, error: sourcesError } = await supabase
     .from('sources')
     .select('id, title')
-    .in('id', sourceIds);
+    .in('id', citedSourceIds);
   if (sourcesError) throw sourcesError;
   const titleById = new Map((sources ?? []).map((s) => [s.id as string, s.title as string]));
 

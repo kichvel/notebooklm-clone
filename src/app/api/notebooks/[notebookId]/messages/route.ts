@@ -12,12 +12,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await request.json();
-  const { question } = body ?? {};
+  const { question, sourceIds } = body ?? {};
   if (typeof question !== 'string' || !question) {
     return NextResponse.json({ error: 'question is required' }, { status: 400 });
   }
+  if (sourceIds !== undefined && (!Array.isArray(sourceIds) || !sourceIds.every((id) => typeof id === 'string'))) {
+    return NextResponse.json({ error: 'sourceIds must be an array of strings' }, { status: 400 });
+  }
 
-  const result = await askQuestion(supabase, { notebookId, question });
+  const result = await askQuestion(supabase, { notebookId, question, sourceIds });
   return NextResponse.json(result, { status: 201 });
 }
 
