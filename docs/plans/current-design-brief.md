@@ -1,54 +1,46 @@
-# Design Brief — Audio Sources (Direct Upload + YouTube Fallback)
+# Design Brief — Notebook Intro (Auto-Title + First Chat Summary)
 
-**Goal:** Let users add audio files as a source type, and make YouTube videos with no captions still ingestible, by transcribing audio with speech-to-text.
+**Goal:** Once the sources a user first adds to a notebook finish ingesting, automatically rename the notebook and post an assistant chat message summarizing what's in it — so the user has something useful to see instead of a blank chat.
 
 **Date:** 2026-09-13
 
 ## Shared understanding
 
-Today's YouTube adapter only works when YouTube exposes a caption track (manual or auto-generated); videos with captions disabled fail outright. This pass adds a speech-to-text fallback so those videos still ingest, and — since the fallback needs a "transcribe raw audio into timestamped blocks" capability anyway — reuses that same capability to add a new direct **Audio** source type (mp3/wav/m4a/webm/ogg), merged into the existing "Upload files" pill alongside PDF/DOCX. Both paths produce the same timestamped-citation experience YouTube sources already have ("Watch at mm:ss").
+Today a new notebook stays "Untitled notebook" and the chat is empty until the user manually asks a question. This feature makes the notebook name itself and post a short synthesized summary as the first chat message, once — right after the initial batch of sources a user adds finishes processing (reaches `ready` or `failed`), and only if at least one of them is `ready`. This is a lightweight, one-shot synthesis (reusing the same "sample chunks, one `generate()` call" pattern as the existing per-source title step), not the larger unbuilt ARCHITECTURE.md §7 overview (no per-source cached summaries, no topics/suggested-questions, no revision tracking). It never fires again after the first time, even as more sources are added or removed later.
 
-Transcription uses OpenAI's `whisper-1` model specifically (not `gpt-4o-transcribe`, despite it being newer) because only `whisper-1` supports `timestamp_granularities`/`verbose_json` segment timestamps — `gpt-4o-transcribe` returns plain text with no timestamps at all, which would break the timestamped-citation requirement.
+**Blocking bug found and fixed as part of this work:** no code path today ever sets `sources.status = 'failed'` — a source that throws mid-ingestion gets stuck at `processing` forever, even though the `failed` status, `failure_reason` column, and the retry endpoint all already assume it's reachable. Since this feature's trigger depends on every source reaching a terminal state, an `onFailure` handler is added to the `ingestSource` Inngest function to set `status = 'failed'` once retries are exhausted.
 
 ## Key decisions
 
-- New shared helper `transcribeAudio()` in the OpenAI provider module (`src/lib/providers/openai.ts`, per ADR-006 — no direct SDK calls outside providers), calling `whisper-1` with `response_format: 'verbose_json'` and `timestamp_granularities: ['segment']`, returning `{ start: number; text: string }[]`.
-- New shared grouping utility (extracted from the existing YouTube cue-grouping logic) turns any timestamped-segment list into ~30s `SourceBlock`s — used by both the audio adapter and the YouTube fallback path.
-- New `audio` adapter (`src/lib/ingestion/adapters/audio.ts`): downloads the uploaded original from Storage (like the PDF/DOCX adapters), transcribes it, groups into blocks.
-- YouTube adapter: on `YoutubeTranscriptDisabledError`/`NotAvailableError`, falls back to downloading the video's lowest-bitrate audio-only stream via `@distube/ytdl-core` (pure JS; no `yt-dlp` binary available in the serverless/Inngest runtime) and transcribing it, instead of immediately failing.
-- Duration cap is enforced as a **file-size cap**, not a probed duration: OpenAI's transcription endpoint has a hard 25MB per-request limit regardless, and there's no `ffprobe` available serverless-side to measure duration directly. Both paths reject (non-retriably) audio over 25MB, which approximates the originally-wanted ~60 minute cap at typical bitrates.
-- Direct audio uploads keep their original file in Storage (consistent with PDF/DOCX); YouTube fallback audio is transcribed in-memory and discarded, consistent with how YouTube sources already don't store the source video today.
-- `sources.type` check constraint gains `'audio'`.
+- New `notebooks.intro_generated_at timestamptz` column: null until the one-time intro is generated. Doubles as the "already done" flag and the write-once race guard.
+- New `maybeGenerateNotebookIntro(supabase, notebookId)` in `src/lib/generation/notebookIntro.ts`: no-ops unless `intro_generated_at` is null, every non-deleted source is terminal (`ready`/`failed`), and at least one is `ready`. Samples a few chunks from each ready source, makes two `generate()` calls (title, then a short 2–4 sentence summary) via the existing OpenAI provider (per ADR-006), then does an atomic `UPDATE notebooks SET title=…, intro_generated_at=now() WHERE id=… AND intro_generated_at IS NULL` — a 0-row result means another concurrent run already won, so the result is discarded; a win inserts one `assistant` message (no citations) with the summary.
+- Called as a final step from `ingestSource` (`src/lib/ingestion/index.ts`) on both the normal success path and from the new `onFailure` handler, so it's re-checked whenever any source in the notebook settles.
+- Errors from generation are caught and swallowed (never fail the triggering source's own ingestion), matching the existing per-source title step's non-fatal pattern.
+- Frontend (`notebook-workspace.tsx`) currently fetches notebook title and messages once on mount only. Extend the existing 2s polling effect to also refresh notebook title and messages while sources are processing, and for a short grace window after (while there are ready sources but no messages yet and the title is still the default), so the generated name/summary appear live.
 
 ## Constraints
 
-- Transcription must go through the provider abstraction (`src/lib/providers`), never call the OpenAI SDK directly from adapters.
-- Ingestion stays one durable, independently retriable Inngest workflow per source; the transcription call happens inside the existing `parse` step.
-- Existing per-notebook (10 sources) and per-file (10MB for PDF/DOCX) limits are untouched; audio uploads get their own 25MB cap tied to the transcription API's hard limit.
-- No `ffmpeg`/`yt-dlp` binaries — everything must run in the Vercel serverless Next.js runtime.
+- No new summary/overview tables or revision tracking — stays scoped to a single title + single chat message, generated once.
+- Generation must go through the existing provider abstraction (`src/lib/providers/openai.ts`), never call the OpenAI SDK directly.
+- Must not change per-source ingestion semantics other than adding the trailing check and fixing the failure-status gap.
 
 ## Out of scope
 
-- Splitting/chunking audio longer than 25MB into multiple transcription requests to lift the size cap.
-- Video sources with picture content (this is audio-only transcription; no visual analysis).
-- Notebook-level and non-audio title generation (already shipped).
-- Any UI for choosing whisper vs. other STT models — `whisper-1` is fixed/internal.
+- The full ARCHITECTURE.md §7 notebook overview (per-source cached summaries, topics with suggested questions, staleness/revision handling, regeneration on later source add/delete).
+- Re-titling or re-summarizing after the first successful batch, ever.
+- A dedicated "summary failed" chat message when every initial source fails — the notebook just stays untitled/empty and becomes eligible again once a later source succeeds.
 
 ## Success criteria
 
-- A user can upload an mp3/wav/m4a/webm/ogg file (≤25MB) via the existing "Upload files" pill and get a source with an LLM-generated title and timestamped citations.
-- A YouTube URL whose video has no caption track ingests successfully via the audio fallback, producing the same timestamped "Watch at mm:ss" citation behavior as caption-based YouTube sources.
-- YouTube videos whose lowest-bitrate audio still exceeds 25MB, or direct audio uploads over 25MB, fail with a clear source-level error — not a silent drop or pipeline crash.
+- Adding one or more sources to a brand-new notebook and waiting for them to finish ingesting results in: the notebook title changing from "Untitled notebook" to a generated name, and one assistant message appearing in the chat summarizing the sources — without a manual page reload.
+- If every source in that first batch fails, the notebook stays untitled and the chat stays empty; if a later source succeeds, the intro is generated then instead.
+- Adding more sources after the intro has already been generated once never renames the notebook or posts another summary message again.
+- A source that throws during ingestion now reaches `status = 'failed'` with a `failure_reason` (previously it stayed stuck at `processing` indefinitely).
 - `npm run lint`, `npm run typecheck`, `npm run test`, and `npm run build` all pass.
 
 ## Expected files touched
 
-- `src/lib/providers/openai.ts` — new `transcribeAudio()` export
-- `src/lib/ingestion/blockGrouping.ts` (new) — shared timed-segment → `SourceBlock[]` grouping, extracted from `youtube.ts`
-- `src/lib/ingestion/adapters/audio.ts` (new), `adapters/index.ts` (register `'audio'`)
-- `src/lib/ingestion/adapters/youtube.ts` — add audio-fallback branch
-- `src/lib/sources/index.ts` — extend `FILE_EXTENSION_TYPE` map + audio size cap
-- `src/app/api/notebooks/[notebookId]/sources/route.ts` — audio-specific size limit branch
-- `src/components/sources/add-source-dialog.tsx` — accept audio extensions in the file picker/drop zone
-- `supabase/migrations/` — new migration adding `'audio'` to `sources.type` check constraint
-- `package.json` — new dep `@distube/ytdl-core`
+- `supabase/migrations/` (new) — add `notebooks.intro_generated_at timestamptz`
+- `src/lib/generation/notebookIntro.ts` (new) — `maybeGenerateNotebookIntro()`
+- `src/lib/ingestion/index.ts` — add `onFailure` handler (sets `status='failed'`) and a trailing `notebook-intro` step
+- `src/app/notebooks/[notebookId]/notebook-workspace.tsx` — extend polling to refresh title + messages

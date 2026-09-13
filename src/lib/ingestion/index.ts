@@ -3,6 +3,7 @@ import { NonRetriableError } from 'inngest';
 import { inngest } from '@/lib/inngest/client';
 import { createServiceClient } from '@/lib/supabase/server';
 import { embed, generate } from '@/lib/providers/openai';
+import { maybeGenerateNotebookIntro } from '@/lib/generation/notebookIntro';
 import { getAdapter } from './adapters';
 import type { SourceBlock } from './adapters/types';
 
@@ -57,8 +58,34 @@ function chunkBlock(block: SourceBlock): Chunk[] {
     }));
 }
 
+export async function markSourceIngestionFailed(
+  supabase: ReturnType<typeof createServiceClient>,
+  sourceId: string,
+  reason: string,
+) {
+  await supabase.from('sources').update({ status: 'failed', failure_reason: reason }).eq('id', sourceId);
+}
+
 export const ingestSource = inngest.createFunction(
-  { id: 'ingest-source', triggers: { event: 'sourcebook/source.ingest.requested' } },
+  {
+    id: 'ingest-source',
+    triggers: { event: 'sourcebook/source.ingest.requested' },
+    onFailure: async ({ event, error, step }) => {
+      const supabase = createServiceClient();
+      const sourceId = event.data.event.data.sourceId as string;
+      await step.run('mark-failed', () =>
+        markSourceIngestionFailed(supabase, sourceId, error.message || 'Ingestion failed'),
+      );
+      await step.run('notebook-intro', async () => {
+        const { data: source } = await supabase
+          .from('sources')
+          .select('notebook_id')
+          .eq('id', sourceId)
+          .single();
+        if (source) await maybeGenerateNotebookIntro(supabase, source.notebook_id);
+      });
+    },
+  },
   async ({ event, step }) => {
     const supabase = createServiceClient();
     const sourceId = event.data.sourceId as string;
@@ -168,6 +195,15 @@ export const ingestSource = inngest.createFunction(
       }
       await supabase.from('sources').update({ status: 'ready' }).eq('id', sourceId);
       await upsertProcessingStep(supabase, sourceId, 'finalize', 'succeeded');
+    });
+
+    await step.run('notebook-intro', async () => {
+      const { data: source } = await supabase
+        .from('sources')
+        .select('notebook_id')
+        .eq('id', sourceId)
+        .single();
+      if (source) await maybeGenerateNotebookIntro(supabase, source.notebook_id);
     });
 
     return { sourceId, chunkCount: chunks.length };
