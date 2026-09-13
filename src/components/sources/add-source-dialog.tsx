@@ -97,13 +97,13 @@ export function AddSourceDialog({
         <PlusIcon />
         Add sources
       </Button>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <DialogHeader>
             <DialogTitle>Add source</DialogTitle>
           </DialogHeader>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
             {MODES.map(({ id, label, icon: Icon }) => (
               <Button
                 key={id}
