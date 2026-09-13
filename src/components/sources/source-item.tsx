@@ -24,8 +24,8 @@ export interface SourceSummary {
 }
 
 function StatusBadge({ status }: { status: SourceSummary['status'] }) {
-  if (status === 'ready') return <Badge>Ready</Badge>;
   if (status === 'failed') return <Badge variant="destructive">Failed</Badge>;
+  if (status === 'ready') return null;
   return <Badge variant="outline">Processing…</Badge>;
 }
 
