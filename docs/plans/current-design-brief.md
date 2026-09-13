@@ -1,61 +1,55 @@
-# Design Brief — Vertical Slice (Days 1–3)
+# Design Brief — NotebookLM-style Workspace UI
 
-**Goal:** An anonymous visitor creates a notebook, adds a pasted-text source, watches it process via the real Inngest pipeline, asks a question, and gets a grounded answer with a clickable citation that opens the supporting passage — running locally against real Supabase/OpenAI, with ownership isolation.
+**Goal:** Redesign Sourcebook's UI as a close visual clone of NotebookLM's dark three-column workspace (Sources / Chat / Studio), plus the missing notebook-list page.
+
 **Date:** 2026-09-13
 
 ## Shared understanding
 
-This is the first end-to-end vertical slice, built on top of three already-merged prep slices: the schema/RLS/storage/provider plumbing, the RLS-enforcing retrieval query, and the real Inngest ingestion workflow (pasted_text only). This slice wires those pieces together with two new domain modules (`generation`, `citations`), two new tables (`messages`, `message_citations`), a handful of API routes, and minimal UI. Everything uses real Supabase/OpenAI calls, consistent with every prep slice so far.
-
-Deliberate scope cuts from the full architecture spec (`docs/ARCHITECTURE.md` §8), confirmed with the user:
-- No PDF parsing yet — pasted_text only (PDF adapter is a fast-follow).
-- No deployment — local (`npm run dev`) only.
-- No real token streaming — synchronous request/response; answer + citations render once complete.
-- No "one generation per notebook" concurrency guard — deferred; no concurrent-generation risk with a single manual tester yet.
-- No conversation-history query rewriting — each question is embedded and answered independently, not rewritten against prior turns.
-- No source-selection UI — retrieval automatically uses all of the notebook's `ready` sources.
-- No notebook overview/synthesis (that's Days 4–5), no source deletion, no usage limits.
+We're rebuilding the Sourcebook workspace to closely follow NotebookLM's dark, three-column layout — Sources on the left, Chat in the center, and a new Studio column on the right hosting three generation features: Study guide, Flashcards, and Quiz (UI only, generation logic stubbed with canned output for now). We're also building the notebook list/dashboard page, which currently doesn't exist at all. The workspace header keeps an editable title, a link back to the notebook list, and a way to create a new notebook; everything else from NotebookLM's header (Copy, Analytics, Share, Settings, avatar) is dropped since there's no auth/sharing/collaboration. Citation inspection (ADR-008) stays as an overlay drawer sliding in from the right over the Studio/chat area, not a permanent fourth column. Theme defaults to dark with a light-mode toggle. Notes/saved excerpts stay out of scope.
 
 ## Key decisions
 
-- New migration: `messages` (notebook_id, role, content, status, selected_source_ids, attempt_id, timestamps, error/model metadata) and `message_citations` (message_id, source_id, chunk_id, display metadata, passage locator, availability status), RLS mirroring the existing ownership-via-notebook-join pattern.
-- `src/lib/providers/openai.ts` gains `generate()` — a chat completion call behind the existing provider interface (ADR-006), model `gpt-4o-mini`.
-- `src/lib/generation/index.ts` — `askQuestion(supabase, { notebookId, question })`: embeds the question, retrieves via the existing `retrieval.search()` scoped to the notebook's `ready` sources, calls `generate()` with a strict grounding prompt restricted to retrieved passages only, validates any model citation references against the actual retrieved chunk ID set, persists the message + citations, and returns a structured result (answer text + citations, or an explicit insufficient-evidence refusal). Takes the RLS-enforcing client as a parameter, same principle as `retrieval.search()`.
-- `src/lib/citations/index.ts` — resolves a persisted `message_citations` row to its passage text and locator (source title + chunk index/section, per the DOCX/TXT/pasted-text row of the ARCHITECTURE §9 table) for the side panel.
-- API routes (Next.js App Router, real Supabase session-based auth, ownership checked server-side — client-provided IDs are never trusted):
-  - `POST /api/notebooks` — create notebook for the current owner.
-  - `POST /api/notebooks/[notebookId]/sources` — upload pasted text to Storage, insert `sources` row, send the real `sourcebook/source.ingest.requested` Inngest event.
-  - `GET /api/notebooks/[notebookId]/sources` — list sources with status, for polling.
-  - `POST /api/notebooks/[notebookId]/messages` — ask a question via `generation.askQuestion()`.
-  - `GET /api/notebooks/[notebookId]/messages` — list chat history with citations.
-- UI: a "new notebook" landing action; a notebook workspace page with a paste-text form and a polling source-status list; a chat panel (ask/answer) with a citation side panel showing the resolved passage. Verify whether anonymous-auth bootstrap already exists in the scaffold before adding it.
-- Manual end-to-end verification of the full flow requires `npx inngest-cli dev` running alongside `npm run dev` (ingestion's own correctness is already proven by the prep-slice-3 automated test); automated tests for this slice do not depend on a running Inngest Dev Server.
+- Adopt shadcn/ui (Radix-based primitives) + `next-themes` for dialogs, dropdowns, tooltips, sheet (citation drawer), and theming — not hand-rolled.
+- Citation drawer uses shadcn `Sheet` anchored right, replacing the current hand-rolled fixed-position div in `notebook-workspace.tsx`.
+- Studio feature cards (Study guide, Flashcards, Quiz) are client-side stubs: clicking produces a fake loading state then canned placeholder output. No new API routes or Inngest functions this pass.
+- Backend routes under `src/app/api/**` are unchanged; this is a UI-only pass against existing notebooks/sources/messages endpoints.
+- Below the `lg` breakpoint, the three columns collapse into a tab switcher (Sources / Chat / Studio) instead of a separate mobile component tree.
+- `docs/PRODUCT.md`'s non-goals section gets a small edit noting Study guide/Flashcards/Quiz are now planned (UI landed, generation logic pending), so it stops contradicting the codebase.
 
 ## Constraints
 
-- Real Supabase/OpenAI calls throughout, consistent with prior prep slices; tests clean up after themselves.
-- RLS-enforcing clients for all user-facing operations; service-role only where background/privileged access is architecturally required.
-- No local Postgres/Docker; migrations applied via Supabase MCP tools.
+- No changes to backend/API behavior, ingestion pipeline, or grounding rules (ADR-005, ADR-007, ADR-008) — this is presentation-layer only.
+- Anonymous single-user model stays intact — no auth, sharing, or collaboration UI.
+- Must stay responsive down to mobile width (MVP requirement in `docs/PRODUCT.md`).
 
 ## Out of scope
 
-- PDF/DOCX/website adapters, Vercel deployment, real token streaming, the generation concurrency guard, conversation-aware query rewriting, source-selection checkboxes, notebook overview/synthesis, source deletion, usage limits, DOCX/TXT/URL ingestion.
+- Real generation logic for Study guide/Flashcards/Quiz (stubbed only).
+- Audio/Video Overview, Mind Map, Reports, Infographic, Data Table, Slide Deck.
+- Web search / "Search the web" sourcing widget.
+- Notes / saved answer excerpts ("Add note").
+- Multiple conversations or conversation history/management.
+- Any auth, sharing, permissions, or multi-user features.
 
 ## Success criteria
 
-- A real, running local flow: create notebook → add pasted-text source → source reaches `ready` (via `npx inngest-cli dev`) → ask a question → receive a grounded answer with at least one valid, clickable citation → citation panel shows the correct supporting passage.
-- An unrelated/unanswerable question produces an explicit refusal, not a fabricated answer.
-- Ownership isolation holds: a second anonymous identity cannot read another's notebook, sources, messages, or citations (automated integration test, cleans up after itself).
-- `npm run typecheck`, `npm run lint`, `npm run test` all pass.
+- Notebook list page exists: create, open, rename, delete notebooks, with proper empty/loading states.
+- Workspace renders the three-column dark layout matching the screenshot's structure and density; collapses to a tabbed single column below `lg`.
+- Sources panel: add source, per-source status (processing/ready/failed) with retry, select-all + per-source checkboxes, delete with confirmation.
+- Chat panel: welcome/empty state with overview + suggested questions once generated, message list, citation markers open the right-side overlay drawer with exact passage.
+- Studio panel: three feature cards (Study guide, Flashcards, Quiz) that open a stub generation flow (loading → canned output).
+- Dark theme by default, toggle to light theme works and persists.
+- `npm run lint`, `npm run typecheck`, `npm run test`, and `npm run build` all pass.
 
 ## Expected files touched
 
-- `supabase/migrations/<ts>_messages_and_citations.sql` — new tables + RLS
-- `src/lib/providers/openai.ts` — add `generate()`
-- `src/lib/generation/index.ts`, `src/lib/generation/*.test.ts`
-- `src/lib/citations/index.ts`, `src/lib/citations/*.test.ts`
-- `src/app/api/notebooks/route.ts`
-- `src/app/api/notebooks/[notebookId]/sources/route.ts`
-- `src/app/api/notebooks/[notebookId]/messages/route.ts`
-- `src/app/notebooks/[notebookId]/page.tsx` and supporting client components
-- `src/app/page.tsx` (or existing landing) — new-notebook action
+- `src/app/page.tsx` — rebuilt as notebook list/dashboard
+- `src/app/notebooks/[notebookId]/notebook-workspace.tsx` — rebuilt into three-column shell + header
+- `src/app/layout.tsx`, `src/app/globals.css` — theme provider wiring, shadcn CSS variables
+- `components.json`, `src/lib/utils.ts` — new, from shadcn init
+- `src/components/ui/*` — new shadcn primitives (button, dialog, dropdown-menu, input, tooltip, skeleton, sheet, etc.)
+- `src/components/sources/*`, `src/components/chat/*`, `src/components/studio/*`, `src/components/notebooks/*` — new feature components
+- `src/components/theme-provider.tsx` — new
+- `docs/PRODUCT.md` — small non-goals edit
+- `package.json` / `package-lock.json` — new deps (shadcn-generated primitives, `next-themes`, `lucide-react`)
