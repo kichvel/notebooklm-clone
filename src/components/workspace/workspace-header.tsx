@@ -65,7 +65,13 @@ export function WorkspaceHeader({
 
   return (
     <header className="flex items-center gap-3 border-b border-border px-4 py-3">
-      <Button variant="ghost" size="icon" aria-label="Back to notebooks" render={<Link href="/" />}>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Back to notebooks"
+        nativeButton={false}
+        render={<Link href="/" />}
+      >
         <ArrowLeftIcon />
       </Button>
 
