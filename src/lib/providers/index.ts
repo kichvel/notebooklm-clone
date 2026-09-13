@@ -1,1 +1,1 @@
-export { embed } from './openai';
+export { embed, generate } from './openai';
