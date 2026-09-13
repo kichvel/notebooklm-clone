@@ -1,1 +1,1 @@
-export { embed, generate } from './openai';
+export { embed, generate, CAPABLE_GENERATION_MODEL } from './openai';

@@ -3,6 +3,7 @@ import OpenAI, { toFile } from 'openai';
 
 const EMBEDDING_MODEL = 'text-embedding-3-small';
 const GENERATION_MODEL = 'gpt-4o-mini';
+export const CAPABLE_GENERATION_MODEL = 'gpt-4.1';
 const TRANSCRIPTION_MODEL = 'whisper-1';
 
 // OpenAI's /audio/transcriptions endpoint limit per request
@@ -28,12 +29,14 @@ export async function embed(text: string): Promise<number[]> {
 export async function generate({
   system,
   prompt,
+  model = GENERATION_MODEL,
 }: {
   system: string;
   prompt: string;
+  model?: string;
 }): Promise<string> {
   const response = await getClient().chat.completions.create({
-    model: GENERATION_MODEL,
+    model,
     temperature: 0,
     messages: [
       { role: 'system', content: system },
