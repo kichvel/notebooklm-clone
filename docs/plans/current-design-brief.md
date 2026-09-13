@@ -1,47 +1,61 @@
-# Design Brief — Inngest Ingestion Workflow Shape
+# Design Brief — Vertical Slice (Days 1–3)
 
-**Goal:** Prove the Inngest ingestion pipeline's mechanics (steps, checkpoints, real side effects) for real, scoped to the simplest source type, so the Day 1–3 vertical slice has a working ingestion workflow shape to extend with real parsers.
+**Goal:** An anonymous visitor creates a notebook, adds a pasted-text source, watches it process via the real Inngest pipeline, asks a question, and gets a grounded answer with a clickable citation that opens the supporting passage — running locally against real Supabase/OpenAI, with ownership isolation.
 **Date:** 2026-09-13
 
 ## Shared understanding
 
-A real Inngest function (`ingest-source`, triggered by `sourcebook/source.ingest.requested` with just a `sourceId`) implements the five-step pipeline from `ARCHITECTURE.md` §6 — parse, normalize, chunk, embed, finalize — scoped to `pasted_text` sources only. "Parse" downloads a real text blob from the `sources` Storage bucket (the test does a minimal real upload first). "Embed" makes real `embed()` calls before inserting real `source_chunks` rows. Each step also writes a real `processing_steps` row (upsert, incrementing `attempts`). The function re-derives everything from the source row via the service client rather than trusting the event payload beyond the ID, matching the "background handlers use privileged access but verify state themselves" principle (ARCHITECTURE §5).
+This is the first end-to-end vertical slice, built on top of three already-merged prep slices: the schema/RLS/storage/provider plumbing, the RLS-enforcing retrieval query, and the real Inngest ingestion workflow (pasted_text only). This slice wires those pieces together with two new domain modules (`generation`, `citations`), two new tables (`messages`, `message_citations`), a handful of API routes, and minimal UI. Everything uses real Supabase/OpenAI calls, consistent with every prep slice so far.
 
-**Revised after checking the actual `@inngest/test` package:** its own README states retries are not modelled — "any step or function that fails once will fail permanently" — so a cross-attempt retry proof (mock a step to fail once, succeed on a second call, assert memoized steps don't re-run) is not achievable with this library. Descoped accordingly: this slice proves the step *shape* — one real, successful `execute()` run through all five steps with genuine DB/Storage/OpenAI side effects, ending with `sources.status = 'ready'` and real `source_chunks` rows. It does not attempt to prove Inngest's own retry mechanism (that's the platform's job, not this codebase's); the one thing within our control — throwing plain (retriable) errors rather than `NonRetriableError` for transient step failures — is what the code should get right, per `docs/ARCHITECTURE.md` §6 and Inngest's `NonRetriableError`/default-retry conventions.
+Deliberate scope cuts from the full architecture spec (`docs/ARCHITECTURE.md` §8), confirmed with the user:
+- No PDF parsing yet — pasted_text only (PDF adapter is a fast-follow).
+- No deployment — local (`npm run dev`) only.
+- No real token streaming — synchronous request/response; answer + citations render once complete.
+- No "one generation per notebook" concurrency guard — deferred; no concurrent-generation risk with a single manual tester yet.
+- No conversation-history query rewriting — each question is embedded and answered independently, not rewritten against prior turns.
+- No source-selection UI — retrieval automatically uses all of the notebook's `ready` sources.
+- No notebook overview/synthesis (that's Days 4–5), no source deletion, no usage limits.
 
 ## Key decisions
 
-- `src/lib/ingestion/index.ts` exports `ingestSource = inngest.createFunction({ id: 'ingest-source' }, { event: 'sourcebook/source.ingest.requested' }, ...)` with five `step.run()` calls: parse, normalize, chunk, embed, finalize
-- Registered in `src/app/api/inngest/route.ts`'s `functions` array
-- Each step upserts a `processing_steps` row (`source_id`, `step`, `status`, incrementing `attempts`) via the service client — background jobs have no user session, so service-role access is correct here, but the function must independently verify the source exists before acting
-- "Chunk" is a naive split (paragraph or fixed-size), in-memory only — no real chunking algorithm work
-- Verification uses `@inngest/test`'s `InngestTestEngine.execute()` for a single successful end-to-end run through all five steps, asserting the real DB/Storage/embedding side effects landed correctly
-- No retry-loop test — out of scope per the finding above
+- New migration: `messages` (notebook_id, role, content, status, selected_source_ids, attempt_id, timestamps, error/model metadata) and `message_citations` (message_id, source_id, chunk_id, display metadata, passage locator, availability status), RLS mirroring the existing ownership-via-notebook-join pattern.
+- `src/lib/providers/openai.ts` gains `generate()` — a chat completion call behind the existing provider interface (ADR-006), model `gpt-4o-mini`.
+- `src/lib/generation/index.ts` — `askQuestion(supabase, { notebookId, question })`: embeds the question, retrieves via the existing `retrieval.search()` scoped to the notebook's `ready` sources, calls `generate()` with a strict grounding prompt restricted to retrieved passages only, validates any model citation references against the actual retrieved chunk ID set, persists the message + citations, and returns a structured result (answer text + citations, or an explicit insufficient-evidence refusal). Takes the RLS-enforcing client as a parameter, same principle as `retrieval.search()`.
+- `src/lib/citations/index.ts` — resolves a persisted `message_citations` row to its passage text and locator (source title + chunk index/section, per the DOCX/TXT/pasted-text row of the ARCHITECTURE §9 table) for the side panel.
+- API routes (Next.js App Router, real Supabase session-based auth, ownership checked server-side — client-provided IDs are never trusted):
+  - `POST /api/notebooks` — create notebook for the current owner.
+  - `POST /api/notebooks/[notebookId]/sources` — upload pasted text to Storage, insert `sources` row, send the real `sourcebook/source.ingest.requested` Inngest event.
+  - `GET /api/notebooks/[notebookId]/sources` — list sources with status, for polling.
+  - `POST /api/notebooks/[notebookId]/messages` — ask a question via `generation.askQuestion()`.
+  - `GET /api/notebooks/[notebookId]/messages` — list chat history with citations.
+- UI: a "new notebook" landing action; a notebook workspace page with a paste-text form and a polling source-status list; a chat panel (ask/answer) with a citation side panel showing the resolved passage. Verify whether anonymous-auth bootstrap already exists in the scaffold before adding it.
+- Manual end-to-end verification of the full flow requires `npx inngest-cli dev` running alongside `npm run dev` (ingestion's own correctness is already proven by the prep-slice-3 automated test); automated tests for this slice do not depend on a running Inngest Dev Server.
 
 ## Constraints
 
-- No local Postgres/Docker, no live Next.js/Inngest Dev Server processes — `@inngest/test` runs the function in-process
-- Real Supabase/OpenAI calls throughout, consistent with prior prep slices
+- Real Supabase/OpenAI calls throughout, consistent with prior prep slices; tests clean up after themselves.
+- RLS-enforcing clients for all user-facing operations; service-role only where background/privileged access is architecturally required.
+- No local Postgres/Docker; migrations applied via Supabase MCP tools.
 
 ## Out of scope
 
-- PDF/DOCX/website parsing (real adapters)
-- Proving Inngest's own retry/checkpoint mechanism (not achievable with `@inngest/test`; trusted as a platform guarantee)
-- The permanent-failure path (exhausted retries → `sources.status = 'failed'`)
-- Actually running this over a live Next.js server + Inngest Dev Server
-- Notebook overview regeneration
-- Any UI
-- The vertical slice itself
+- PDF/DOCX/website adapters, Vercel deployment, real token streaming, the generation concurrency guard, conversation-aware query rewriting, source-selection checkboxes, notebook overview/synthesis, source deletion, usage limits, DOCX/TXT/URL ingestion.
 
 ## Success criteria
 
-- `ingestSource` runs to completion via `@inngest/test`'s `execute()`, ending with `sources.status = 'ready'` and the expected `source_chunks` rows present, each `processing_steps` row `status = 'succeeded'`
-- Test cleans up its own rows (notebook cascade)
-- `npm run typecheck`, `npm run lint` still pass
+- A real, running local flow: create notebook → add pasted-text source → source reaches `ready` (via `npx inngest-cli dev`) → ask a question → receive a grounded answer with at least one valid, clickable citation → citation panel shows the correct supporting passage.
+- An unrelated/unanswerable question produces an explicit refusal, not a fabricated answer.
+- Ownership isolation holds: a second anonymous identity cannot read another's notebook, sources, messages, or citations (automated integration test, cleans up after itself).
+- `npm run typecheck`, `npm run lint`, `npm run test` all pass.
 
 ## Expected files touched
 
-- `src/lib/ingestion/index.ts` — the Inngest function
-- `src/app/api/inngest/route.ts` — register the function
-- `package.json` — add `@inngest/test` dev dependency (already installed in this worktree)
-- `src/lib/ingestion/ingestSource.test.ts` — real end-to-end test of one successful run
+- `supabase/migrations/<ts>_messages_and_citations.sql` — new tables + RLS
+- `src/lib/providers/openai.ts` — add `generate()`
+- `src/lib/generation/index.ts`, `src/lib/generation/*.test.ts`
+- `src/lib/citations/index.ts`, `src/lib/citations/*.test.ts`
+- `src/app/api/notebooks/route.ts`
+- `src/app/api/notebooks/[notebookId]/sources/route.ts`
+- `src/app/api/notebooks/[notebookId]/messages/route.ts`
+- `src/app/notebooks/[notebookId]/page.tsx` and supporting client components
+- `src/app/page.tsx` (or existing landing) — new-notebook action
