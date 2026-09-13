@@ -1,8 +1,10 @@
 alter table public.message_citations
-  add column start_seconds numeric,
-  add column source_url text;
+  add column if not exists start_seconds numeric,
+  add column if not exists source_url text;
 
-create or replace function public.match_source_chunks(
+drop function if exists public.match_source_chunks(extensions.vector, uuid, uuid[], int);
+
+create function public.match_source_chunks(
   query_embedding extensions.vector(1536),
   match_notebook_id uuid,
   match_source_ids uuid[] default null,
