@@ -85,6 +85,23 @@ describe('youtubeAdapter', () => {
     expect(blocks).toEqual([{ text: 'Fallback speech', startSeconds: 0 }]);
   });
 
+  it('falls back to audio transcription when the transcript resolves with zero cues', async () => {
+    vi.mocked(YoutubeTranscript.fetchTranscript).mockResolvedValue([]);
+    const ytdl = (await import('@distube/ytdl-core')).default;
+    vi.mocked(ytdl.getInfo).mockResolvedValue({} as never);
+    vi.mocked(ytdl).mockReturnValue(Readable.from([Buffer.from('a'.repeat(1000))]) as never);
+    const { transcribeAudio } = await import('@/lib/providers/openai');
+    vi.mocked(transcribeAudio).mockResolvedValue([{ start: 0, text: 'Fallback speech' }]);
+
+    const { blocks } = await youtubeAdapter.parse(undefined as never, {
+      sourceId: 'source-1',
+      storagePath: null,
+      originUrl: 'https://www.youtube.com/watch?v=abc123XYZ_-',
+    });
+
+    expect(blocks).toEqual([{ text: 'Fallback speech', startSeconds: 0 }]);
+  });
+
   it('throws non-retriably when fallback audio exceeds the size cap', async () => {
     vi.mocked(YoutubeTranscript.fetchTranscript).mockRejectedValue(
       new YoutubeTranscriptDisabledError('abc123XYZ_-'),

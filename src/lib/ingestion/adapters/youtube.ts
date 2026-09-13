@@ -34,6 +34,16 @@ async function downloadLowestBitrateAudio(videoId: string): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+async function transcribeViaAudioFallback(videoId: string) {
+  const audio = await downloadLowestBitrateAudio(videoId);
+  const segments = await transcribeAudio(audio, `${videoId}.webm`);
+  const blocks = groupTimedItemsIntoBlocks(segments);
+  if (blocks.length === 0) {
+    throw new NonRetriableError('Could not transcribe any speech from this video');
+  }
+  return { blocks };
+}
+
 export const youtubeAdapter: SourceAdapter = {
   async parse(_supabase, { originUrl }) {
     if (!originUrl) throw new Error('Missing origin_url');
@@ -48,20 +58,17 @@ export const youtubeAdapter: SourceAdapter = {
         err instanceof YoutubeTranscriptDisabledError ||
         err instanceof YoutubeTranscriptNotAvailableError
       ) {
-        const audio = await downloadLowestBitrateAudio(videoId);
-        const segments = await transcribeAudio(audio, `${videoId}.webm`);
-        const blocks = groupTimedItemsIntoBlocks(segments);
-        if (blocks.length === 0) {
-          throw new NonRetriableError('Could not transcribe any speech from this video');
-        }
-        return { blocks };
+        return transcribeViaAudioFallback(videoId);
       }
       throw err;
     }
 
     const blocks = groupTimedItemsIntoBlocks(cues.map((c) => ({ start: c.offset, text: c.text })));
     if (blocks.length === 0) {
-      throw new NonRetriableError('This video has no available transcript');
+      // youtube-transcript can resolve successfully with zero cues when a caption
+      // track exists but its XML doesn't match the library's parser (format drift) —
+      // treat that the same as "no captions" and fall back to audio transcription.
+      return transcribeViaAudioFallback(videoId);
     }
 
     return { blocks };
