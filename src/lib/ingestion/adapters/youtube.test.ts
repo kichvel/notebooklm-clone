@@ -1,11 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
-import {
-  YoutubeTranscript,
-  YoutubeTranscriptDisabledError,
-  type TranscriptResponse,
-} from 'youtube-transcript';
-import { extractVideoId, groupCuesIntoBlocks, youtubeAdapter } from './youtube';
+import { YoutubeTranscript, YoutubeTranscriptDisabledError } from 'youtube-transcript';
+import { extractVideoId, youtubeAdapter } from './youtube';
 
 vi.mock('youtube-transcript', async () => {
   const actual = await vi.importActual<typeof import('youtube-transcript')>('youtube-transcript');
@@ -23,27 +19,6 @@ describe('extractVideoId', () => {
 
   it('returns null for a non-YouTube URL', () => {
     expect(extractVideoId('https://example.com/article')).toBeNull();
-  });
-});
-
-describe('groupCuesIntoBlocks', () => {
-  it('groups cues into ~30 second blocks carrying startSeconds', () => {
-    const cues: TranscriptResponse[] = [
-      { text: 'Hello', offset: 0, duration: 2 },
-      { text: 'world', offset: 5, duration: 2 },
-      { text: 'this is minute one', offset: 31, duration: 3 },
-      { text: 'continuing', offset: 40, duration: 2 },
-    ];
-
-    const blocks = groupCuesIntoBlocks(cues);
-
-    expect(blocks).toHaveLength(2);
-    expect(blocks[0]).toEqual({ text: 'Hello world', startSeconds: 0 });
-    expect(blocks[1]).toEqual({ text: 'this is minute one continuing', startSeconds: 31 });
-  });
-
-  it('returns an empty array for no cues', () => {
-    expect(groupCuesIntoBlocks([])).toEqual([]);
   });
 });
 
