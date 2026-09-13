@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { InngestTestEngine } from '@inngest/test';
 import { createServiceClient } from '@/lib/supabase/server';
 import { createPrimaryTestClient } from '@/lib/supabase/test-helpers';
-import { ingestSource } from './index';
+import { ingestSource, markSourceIngestionFailed } from './index';
 
 const hasRealEnv = Boolean(
   process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -96,5 +96,50 @@ describe.skipIf(!hasRealEnv)('ingestSource', () => {
       .eq('source_id', source!.id);
     expect(steps).toHaveLength(5);
     expect(steps!.every((s) => s.status === 'succeeded' && s.attempts === 1)).toBe(true);
+
+    const { data: notebookAfter } = await service
+      .from('notebooks')
+      .select('title, intro_generated_at')
+      .eq('id', notebook!.id)
+      .single();
+    expect(notebookAfter?.title).not.toBe('Ingestion test notebook');
+    expect(notebookAfter?.intro_generated_at).not.toBeNull();
+
+    const { data: messages } = await service
+      .from('messages')
+      .select('role, status')
+      .eq('notebook_id', notebook!.id);
+    expect(messages).toHaveLength(1);
+    expect(messages![0].role).toBe('assistant');
   }, 30000);
+
+  it('marks a source failed with a reason', async () => {
+    const service = createServiceClient();
+    const { data: notebook } = await service
+      .from('notebooks')
+      .insert({ title: 'Failure test notebook' })
+      .select()
+      .single();
+    createdNotebookIds.push(notebook!.id);
+    const { data: source } = await service
+      .from('sources')
+      .insert({
+        notebook_id: notebook!.id,
+        type: 'pasted_text',
+        title: 'Will fail',
+        status: 'processing',
+      })
+      .select()
+      .single();
+
+    await markSourceIngestionFailed(service, source!.id, 'Something broke');
+
+    const { data: after } = await service
+      .from('sources')
+      .select('status, failure_reason')
+      .eq('id', source!.id)
+      .single();
+    expect(after?.status).toBe('failed');
+    expect(after?.failure_reason).toBe('Something broke');
+  });
 });
