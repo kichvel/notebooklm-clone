@@ -11,6 +11,16 @@ export async function createNotebook(supabase: SupabaseClient, title?: string) {
   return data;
 }
 
+export async function getNotebook(supabase: SupabaseClient, id: string) {
+  const { data, error } = await supabase
+    .from('notebooks')
+    .select('id, title, created_at, updated_at')
+    .eq('id', id)
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 export async function listNotebooks(supabase: SupabaseClient) {
   const { data, error } = await supabase
     .from('notebooks')
