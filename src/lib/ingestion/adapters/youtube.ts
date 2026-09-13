@@ -7,14 +7,12 @@ import {
   YoutubeTranscriptNotAvailableError,
   type TranscriptResponse,
 } from 'youtube-transcript';
-import { transcribeAudio } from '@/lib/providers/openai';
+import { transcribeAudio, MAX_TRANSCRIPTION_AUDIO_BYTES } from '@/lib/providers/openai';
 import { groupTimedItemsIntoBlocks } from '../blockGrouping';
 import type { SourceAdapter } from './types';
 
 const VIDEO_ID_RE =
   /(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?/\s]{11})/i;
-
-const MAX_FALLBACK_AUDIO_BYTES = 25 * 1024 * 1024;
 
 export function extractVideoId(url: string): string | null {
   const match = url.match(VIDEO_ID_RE);
@@ -27,7 +25,7 @@ async function downloadLowestBitrateAudio(videoId: string): Promise<Buffer> {
   let total = 0;
   for await (const chunk of stream) {
     total += chunk.length;
-    if (total > MAX_FALLBACK_AUDIO_BYTES) {
+    if (total > MAX_TRANSCRIPTION_AUDIO_BYTES) {
       stream.destroy();
       throw new NonRetriableError('Video audio exceeds the 25MB transcription limit');
     }

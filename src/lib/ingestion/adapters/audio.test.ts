@@ -4,7 +4,10 @@ import { NonRetriableError } from 'inngest';
 import { audioAdapter } from './audio';
 import * as openaiProvider from '@/lib/providers/openai';
 
-vi.mock('@/lib/providers/openai', () => ({ transcribeAudio: vi.fn() }));
+vi.mock('@/lib/providers/openai', () => ({
+  transcribeAudio: vi.fn(),
+  MAX_TRANSCRIPTION_AUDIO_BYTES: 25 * 1024 * 1024,
+}));
 
 function fakeSupabase(blob: Blob | null) {
   return {

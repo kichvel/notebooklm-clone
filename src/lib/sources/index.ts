@@ -1,5 +1,6 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { MAX_TRANSCRIPTION_AUDIO_BYTES } from '@/lib/providers/openai';
 import { inngest } from '@/lib/inngest/client';
 
 type SourceRow = Record<string, unknown> & { id: string; status: string };
@@ -69,8 +70,6 @@ const FILE_EXTENSION_TYPE: Record<string, 'pdf' | 'docx' | 'audio'> = {
   ogg: 'audio',
 };
 
-export const MAX_AUDIO_FILE_BYTES = 25 * 1024 * 1024;
-
 export interface CreateFileSourceParams {
   notebookId: string;
   filename: string;
@@ -87,7 +86,7 @@ export async function createFileSource(
 
   // pdf/docx are size-checked upstream in route.ts; audio is capped here too since
   // this module is the only place that knows the transcription size limit.
-  if (type === 'audio' && file.size > MAX_AUDIO_FILE_BYTES) {
+  if (type === 'audio' && file.size > MAX_TRANSCRIPTION_AUDIO_BYTES) {
     throw new Error('Audio file exceeds the 25MB limit');
   }
 

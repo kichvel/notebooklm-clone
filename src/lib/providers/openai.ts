@@ -5,6 +5,9 @@ const EMBEDDING_MODEL = 'text-embedding-3-small';
 const GENERATION_MODEL = 'gpt-4o-mini';
 const TRANSCRIPTION_MODEL = 'whisper-1';
 
+// OpenAI's /audio/transcriptions endpoint limit per request
+export const MAX_TRANSCRIPTION_AUDIO_BYTES = 25 * 1024 * 1024;
+
 let client: OpenAI | null = null;
 
 function getClient(): OpenAI {

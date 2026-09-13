@@ -13,7 +13,10 @@ vi.mock('youtube-transcript', async () => {
 vi.mock('@distube/ytdl-core', () => ({
   default: Object.assign(vi.fn(), { getInfo: vi.fn() }),
 }));
-vi.mock('@/lib/providers/openai', () => ({ transcribeAudio: vi.fn() }));
+vi.mock('@/lib/providers/openai', () => ({
+  transcribeAudio: vi.fn(),
+  MAX_TRANSCRIPTION_AUDIO_BYTES: 25 * 1024 * 1024,
+}));
 
 describe('extractVideoId', () => {
   it.each([
