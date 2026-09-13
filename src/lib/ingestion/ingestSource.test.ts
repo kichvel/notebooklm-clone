@@ -13,11 +13,16 @@ const hasRealEnv = Boolean(
 
 describe.skipIf(!hasRealEnv)('ingestSource', () => {
   const createdNotebookIds: string[] = [];
+  const uploadedStoragePaths: string[] = [];
 
   afterAll(async () => {
-    if (createdNotebookIds.length === 0) return;
     const service = createServiceClient();
-    await service.from('notebooks').delete().in('id', createdNotebookIds);
+    if (uploadedStoragePaths.length > 0) {
+      await service.storage.from('sources').remove(uploadedStoragePaths);
+    }
+    if (createdNotebookIds.length > 0) {
+      await service.from('notebooks').delete().in('id', createdNotebookIds);
+    }
   });
 
   it(
@@ -58,6 +63,7 @@ describe.skipIf(!hasRealEnv)('ingestSource', () => {
         .from('sources')
         .upload(storagePath, pastedText, { contentType: 'text/plain' });
       expect(uploadError).toBeNull();
+      uploadedStoragePaths.push(storagePath);
 
       const { error: pathUpdateError } = await service
         .from('sources')
