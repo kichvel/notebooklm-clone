@@ -6,6 +6,19 @@
 
 ---
 
+## Post-ship update (2026-09-13): YouTube audio-fallback reverted
+
+The YouTube-audio-fallback half of this plan (Task 4) shipped, then broke in production twice in the same day, in two different unfixable ways:
+
+1. `@distube/ytdl-core` (chosen in Task 4) turned out to already be archived by its maintainer (August 2025) and failed with `Failed to find any playable formats` — a known, recurring issue in that dead library.
+2. Swapped to `youtubei.js` (actively maintained). It then failed with `No valid URL to decipher` — an actively-tracked, ongoing issue where YouTube's signature-cipher scheme outpaces the library's own extraction logic, affecting even its latest release.
+
+Given two structurally different failures from two different libraries within the same day, the YouTube-audio-fallback path was reverted: `youtube.ts` is back to caption-only (fails clearly with "This video has no available transcript" when no caption track exists, whether `youtube-transcript` throws or resolves with zero cues). `@distube/ytdl-core` and `youtubei.js` were both removed as dependencies.
+
+**Task 3 (direct Audio source type) is unaffected and remains shipped** — it never depended on either extraction library. A caption-less YouTube video's audio can still be added to a notebook by downloading it separately and uploading it as a direct Audio source. Sections below describe the plan as originally written/executed; treat Task 4 as historical/reverted.
+
+---
+
 ## Files
 
 | Action | Path | Purpose |

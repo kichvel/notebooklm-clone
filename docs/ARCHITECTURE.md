@@ -82,7 +82,7 @@ An expandable adapter interface produces a common document structure: title, ori
 - DOCX preserves headings where available; it does not invent PDF-like page numbers.
 - Text inputs preserve useful section and paragraph structure.
 - Audio is transcribed via Whisper into timed text blocks.
-- Websites extract human-readable text from one public HTML page and retain title and URL. Store a snapshot so later page changes do not alter existing citations. A YouTube URL without a caption track falls back to downloading and transcribing its audio the same way.
+- Websites extract human-readable text from one public HTML page and retain title and URL. Store a snapshot so later page changes do not alter existing citations. A YouTube URL relies on its caption track (manual or auto-generated); a video with no caption track fails with a clear error rather than falling back to audio extraction — unofficial YouTube stream-extraction libraries are unreliable enough (dead or actively broken by YouTube's own anti-scraping changes) that we don't depend on one in the ingestion path. A caption-less video's audio can still be added by downloading it separately and uploading it as a direct Audio source.
 
 Parser libraries remain to be selected. Unsupported, encrypted, and image-only documents fail with an actionable explanation; OCR is excluded.
 
