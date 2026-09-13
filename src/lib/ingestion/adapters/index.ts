@@ -13,6 +13,7 @@ export const adapters: Record<string, SourceAdapter> = {
   pasted_text: pastedTextAdapter,
   pdf: pdfAdapter,
   docx: docxAdapter,
+  txt: pastedTextAdapter,
   website: websiteAdapter,
   youtube: youtubeAdapter,
   audio: audioAdapter,

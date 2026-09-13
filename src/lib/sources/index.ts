@@ -60,9 +60,10 @@ export async function createPastedTextSource(
   return enqueueOrMarkFailed(supabase, updated);
 }
 
-const FILE_EXTENSION_TYPE: Record<string, 'pdf' | 'docx' | 'audio'> = {
+const FILE_EXTENSION_TYPE: Record<string, 'pdf' | 'docx' | 'txt' | 'audio'> = {
   pdf: 'pdf',
   docx: 'docx',
+  md: 'txt',
   mp3: 'audio',
   wav: 'audio',
   m4a: 'audio',

@@ -133,7 +133,7 @@ export function AddSourceDialog({
               onDrop={handleDrop}
             >
               <p>or drop your files</p>
-              <p className="text-xs">pdf, docx, audio</p>
+              <p className="text-xs">pdf, docx, markdown, audio</p>
               <Button
                 type="button"
                 variant="outline"
@@ -146,7 +146,7 @@ export function AddSourceDialog({
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.docx,.mp3,.wav,.m4a,.webm,.ogg"
+                accept=".pdf,.docx,.md,.mp3,.wav,.m4a,.webm,.ogg"
                 className="hidden"
                 onChange={(event) => setFiles(event.target.files)}
               />
@@ -171,13 +171,18 @@ export function AddSourceDialog({
           )}
 
           {mode === 'youtube' && (
-            <Input
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder="Paste a YouTube link"
-              type="url"
-              required
-            />
+            <div className="flex flex-col gap-2">
+              <p className="text-xs text-muted-foreground">
+                Only YouTube videos with captions/transcripts available can be added as a source.
+              </p>
+              <Input
+                value={url}
+                onChange={(event) => setUrl(event.target.value)}
+                placeholder="Paste a YouTube link"
+                type="url"
+                required
+              />
+            </div>
           )}
 
           {mode === 'text' && (
