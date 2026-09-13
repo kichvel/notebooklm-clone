@@ -133,7 +133,7 @@ export function AddSourceDialog({
               onDrop={handleDrop}
             >
               <p>or drop your files</p>
-              <p className="text-xs">pdf, docx</p>
+              <p className="text-xs">pdf, docx, audio</p>
               <Button
                 type="button"
                 variant="outline"
@@ -146,7 +146,7 @@ export function AddSourceDialog({
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.docx"
+                accept=".pdf,.docx,.mp3,.wav,.m4a,.webm,.ogg"
                 className="hidden"
                 onChange={(event) => setFiles(event.target.files)}
               />

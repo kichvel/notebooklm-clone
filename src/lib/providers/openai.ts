@@ -1,8 +1,12 @@
 import 'server-only';
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai';
 
 const EMBEDDING_MODEL = 'text-embedding-3-small';
 const GENERATION_MODEL = 'gpt-4o-mini';
+const TRANSCRIPTION_MODEL = 'whisper-1';
+
+// OpenAI's /audio/transcriptions endpoint limit per request
+export const MAX_TRANSCRIPTION_AUDIO_BYTES = 25 * 1024 * 1024;
 
 let client: OpenAI | null = null;
 
@@ -37,4 +41,23 @@ export async function generate({
     ],
   });
   return response.choices[0]?.message?.content ?? '';
+}
+
+export interface TranscribedSegment {
+  start: number;
+  text: string;
+}
+
+export async function transcribeAudio(
+  buffer: Buffer,
+  filename: string,
+): Promise<TranscribedSegment[]> {
+  const response = await getClient().audio.transcriptions.create({
+    file: await toFile(buffer, filename),
+    model: TRANSCRIPTION_MODEL,
+    response_format: 'verbose_json',
+    timestamp_granularities: ['segment'],
+  });
+  const segments = (response as { segments?: { start: number; text: string }[] }).segments ?? [];
+  return segments.map((s) => ({ start: s.start, text: s.text.trim() })).filter((s) => s.text);
 }

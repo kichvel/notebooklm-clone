@@ -1,4 +1,5 @@
 import 'server-only';
+import ytdl from '@distube/ytdl-core';
 import { NonRetriableError } from 'inngest';
 import {
   YoutubeTranscript,
@@ -6,38 +7,31 @@ import {
   YoutubeTranscriptNotAvailableError,
   type TranscriptResponse,
 } from 'youtube-transcript';
-import type { SourceAdapter, SourceBlock } from './types';
+import { transcribeAudio, MAX_TRANSCRIPTION_AUDIO_BYTES } from '@/lib/providers/openai';
+import { groupTimedItemsIntoBlocks } from '../blockGrouping';
+import type { SourceAdapter } from './types';
 
 const VIDEO_ID_RE =
   /(?:youtube\.com\/(?:[^/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?/\s]{11})/i;
-
-const BLOCK_DURATION_SECONDS = 30;
 
 export function extractVideoId(url: string): string | null {
   const match = url.match(VIDEO_ID_RE);
   return match ? match[1] : null;
 }
 
-export function groupCuesIntoBlocks(cues: TranscriptResponse[]): SourceBlock[] {
-  if (cues.length === 0) return [];
-
-  const blocks: SourceBlock[] = [];
-  let blockStart = cues[0].offset;
-  let blockTexts: string[] = [];
-
-  for (const cue of cues) {
-    if (cue.offset - blockStart >= BLOCK_DURATION_SECONDS && blockTexts.length > 0) {
-      blocks.push({ text: blockTexts.join(' ').trim(), startSeconds: blockStart });
-      blockStart = cue.offset;
-      blockTexts = [];
+async function downloadLowestBitrateAudio(videoId: string): Promise<Buffer> {
+  const stream = ytdl(videoId, { filter: 'audioonly', quality: 'lowestaudio' });
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of stream) {
+    total += chunk.length;
+    if (total > MAX_TRANSCRIPTION_AUDIO_BYTES) {
+      stream.destroy();
+      throw new NonRetriableError('Video audio exceeds the 25MB transcription limit');
     }
-    blockTexts.push(cue.text);
+    chunks.push(chunk);
   }
-  if (blockTexts.length > 0) {
-    blocks.push({ text: blockTexts.join(' ').trim(), startSeconds: blockStart });
-  }
-
-  return blocks.filter((b) => b.text.length > 0);
+  return Buffer.concat(chunks);
 }
 
 export const youtubeAdapter: SourceAdapter = {
@@ -54,12 +48,18 @@ export const youtubeAdapter: SourceAdapter = {
         err instanceof YoutubeTranscriptDisabledError ||
         err instanceof YoutubeTranscriptNotAvailableError
       ) {
-        throw new NonRetriableError('This video has no available transcript');
+        const audio = await downloadLowestBitrateAudio(videoId);
+        const segments = await transcribeAudio(audio, `${videoId}.webm`);
+        const blocks = groupTimedItemsIntoBlocks(segments);
+        if (blocks.length === 0) {
+          throw new NonRetriableError('Could not transcribe any speech from this video');
+        }
+        return { blocks };
       }
       throw err;
     }
 
-    const blocks = groupCuesIntoBlocks(cues);
+    const blocks = groupTimedItemsIntoBlocks(cues.map((c) => ({ start: c.offset, text: c.text })));
     if (blocks.length === 0) {
       throw new NonRetriableError('This video has no available transcript');
     }

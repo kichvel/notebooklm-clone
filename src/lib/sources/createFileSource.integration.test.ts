@@ -64,4 +64,45 @@ describe.skipIf(!hasRealEnv)('createFileSource', () => {
       createFileSource(user, { notebookId: notebook!.id, filename: 'notes.exe', file }),
     ).rejects.toThrow(/unsupported file type/i);
   }, 30000);
+
+  it('registers an audio file source as type audio', async () => {
+    const user = await createPrimaryTestClient();
+    const { data: notebook, error: notebookError } = await user
+      .from('notebooks')
+      .insert({ title: 'Audio source test notebook' })
+      .select()
+      .single();
+    expect(notebookError).toBeNull();
+    createdNotebookIds.push(notebook!.id);
+
+    const file = new Blob([new Uint8Array(10)], { type: 'audio/mpeg' });
+
+    const source = await createFileSource(user, {
+      notebookId: notebook!.id,
+      filename: 'Interview.mp3',
+      file,
+    });
+
+    expect(source.title).toBe('Interview');
+    expect(source.type).toBe('audio');
+    expect(['uploaded', 'failed']).toContain(source.status);
+    expect(source.storage_path).toBe(`${notebook!.id}/${source.id}/original.mp3`);
+    uploadedStoragePaths.push(source.storage_path as string);
+  }, 30000);
+
+  it('rejects an audio file that exceeds the 25MB cap', async () => {
+    const user = await createPrimaryTestClient();
+    const { data: notebook } = await user
+      .from('notebooks')
+      .insert({ title: 'Audio size cap test notebook' })
+      .select()
+      .single();
+    createdNotebookIds.push(notebook!.id);
+
+    const file = new Blob([new Uint8Array(26 * 1024 * 1024)], { type: 'audio/mpeg' });
+
+    await expect(
+      createFileSource(user, { notebookId: notebook!.id, filename: 'huge.mp3', file }),
+    ).rejects.toThrow(/25MB/);
+  }, 30000);
 });

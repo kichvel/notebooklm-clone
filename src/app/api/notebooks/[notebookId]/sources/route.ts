@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { MAX_TRANSCRIPTION_AUDIO_BYTES } from '@/lib/providers/openai';
 import { createClient } from '@/lib/supabase/server';
 import { createFileSource, createPastedTextSource } from '@/lib/sources';
 
 const MAX_SOURCES_PER_NOTEBOOK = 10;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const AUDIO_EXTENSIONS = new Set(['mp3', 'wav', 'm4a', 'webm', 'ogg']);
 
 async function handleFileUpload(
   request: NextRequest,
@@ -32,8 +34,10 @@ async function handleFileUpload(
       skipped.push({ filename: file.name, reason: 'Notebook source limit reached' });
       continue;
     }
-    if (file.size > MAX_FILE_BYTES) {
-      skipped.push({ filename: file.name, reason: 'File exceeds 10MB limit' });
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+    const limit = AUDIO_EXTENSIONS.has(ext) ? MAX_TRANSCRIPTION_AUDIO_BYTES : MAX_FILE_BYTES;
+    if (file.size > limit) {
+      skipped.push({ filename: file.name, reason: `File exceeds ${limit / (1024 * 1024)}MB limit` });
       continue;
     }
     try {

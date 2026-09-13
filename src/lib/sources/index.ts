@@ -1,5 +1,6 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { MAX_TRANSCRIPTION_AUDIO_BYTES } from '@/lib/providers/openai';
 import { inngest } from '@/lib/inngest/client';
 
 type SourceRow = Record<string, unknown> & { id: string; status: string };
@@ -59,9 +60,14 @@ export async function createPastedTextSource(
   return enqueueOrMarkFailed(supabase, updated);
 }
 
-const FILE_EXTENSION_TYPE: Record<string, 'pdf' | 'docx'> = {
+const FILE_EXTENSION_TYPE: Record<string, 'pdf' | 'docx' | 'audio'> = {
   pdf: 'pdf',
   docx: 'docx',
+  mp3: 'audio',
+  wav: 'audio',
+  m4a: 'audio',
+  webm: 'audio',
+  ogg: 'audio',
 };
 
 export interface CreateFileSourceParams {
@@ -77,6 +83,12 @@ export async function createFileSource(
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
   const type = FILE_EXTENSION_TYPE[ext];
   if (!type) throw new Error(`Unsupported file type: .${ext}`);
+
+  // pdf/docx are size-checked upstream in route.ts; audio is capped here too since
+  // this module is the only place that knows the transcription size limit.
+  if (type === 'audio' && file.size > MAX_TRANSCRIPTION_AUDIO_BYTES) {
+    throw new Error('Audio file exceeds the 25MB limit');
+  }
 
   const placeholderTitle = filename.replace(/\.[^.]+$/, '') || filename;
 
