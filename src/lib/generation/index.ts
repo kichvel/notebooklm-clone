@@ -1,6 +1,6 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { embed, generate } from '@/lib/providers/openai';
+import { CAPABLE_GENERATION_MODEL, embed, generate } from '@/lib/providers/openai';
 import { search } from '@/lib/retrieval';
 
 export const REFUSAL_TEXT =
@@ -80,7 +80,11 @@ export async function askQuestion(
   const system = buildSystemPrompt(results.length);
   const passagesBlock = results.map((r, i) => `[${i + 1}] ${r.content}`).join('\n\n');
   const rawAnswer = (
-    await generate({ system, prompt: `Passages:\n${passagesBlock}\n\nQuestion: ${question}` })
+    await generate({
+      system,
+      prompt: `Passages:\n${passagesBlock}\n\nQuestion: ${question}`,
+      model: CAPABLE_GENERATION_MODEL,
+    })
   ).trim();
 
   const validLabels = new Map<number, (typeof results)[number]>();

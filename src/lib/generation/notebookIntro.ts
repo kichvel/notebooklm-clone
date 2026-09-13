@@ -1,6 +1,6 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { generate } from '@/lib/providers/openai';
+import { CAPABLE_GENERATION_MODEL, generate } from '@/lib/providers/openai';
 
 const MAX_CHUNKS_PER_SOURCE = 3;
 const MAX_SAMPLE_CHARS = 6000;
@@ -55,6 +55,7 @@ export async function maybeGenerateNotebookIntro(
         system:
           'You write a short 2-4 sentence introduction summarizing what a set of notebook sources cover, based only on the passages given. Do not add information beyond what the passages show. Respond with only the summary.',
         prompt: sample,
+        model: CAPABLE_GENERATION_MODEL,
       })
     ).trim();
   } catch {
