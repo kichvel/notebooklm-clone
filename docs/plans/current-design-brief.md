@@ -1,55 +1,46 @@
-# Design Brief — NotebookLM-style Workspace UI
+# Design Brief — Notebook Intro (Auto-Title + First Chat Summary)
 
-**Goal:** Redesign Sourcebook's UI as a close visual clone of NotebookLM's dark three-column workspace (Sources / Chat / Studio), plus the missing notebook-list page.
+**Goal:** Once the sources a user first adds to a notebook finish ingesting, automatically rename the notebook and post an assistant chat message summarizing what's in it — so the user has something useful to see instead of a blank chat.
 
 **Date:** 2026-09-13
 
 ## Shared understanding
 
-We're rebuilding the Sourcebook workspace to closely follow NotebookLM's dark, three-column layout — Sources on the left, Chat in the center, and a new Studio column on the right hosting three generation features: Study guide, Flashcards, and Quiz (UI only, generation logic stubbed with canned output for now). We're also building the notebook list/dashboard page, which currently doesn't exist at all. The workspace header keeps an editable title, a link back to the notebook list, and a way to create a new notebook; everything else from NotebookLM's header (Copy, Analytics, Share, Settings, avatar) is dropped since there's no auth/sharing/collaboration. Citation inspection (ADR-008) stays as an overlay drawer sliding in from the right over the Studio/chat area, not a permanent fourth column. Theme defaults to dark with a light-mode toggle. Notes/saved excerpts stay out of scope.
+Today a new notebook stays "Untitled notebook" and the chat is empty until the user manually asks a question. This feature makes the notebook name itself and post a short synthesized summary as the first chat message, once — right after the initial batch of sources a user adds finishes processing (reaches `ready` or `failed`), and only if at least one of them is `ready`. This is a lightweight, one-shot synthesis (reusing the same "sample chunks, one `generate()` call" pattern as the existing per-source title step), not the larger unbuilt ARCHITECTURE.md §7 overview (no per-source cached summaries, no topics/suggested-questions, no revision tracking). It never fires again after the first time, even as more sources are added or removed later.
+
+**Blocking bug found and fixed as part of this work:** no code path today ever sets `sources.status = 'failed'` — a source that throws mid-ingestion gets stuck at `processing` forever, even though the `failed` status, `failure_reason` column, and the retry endpoint all already assume it's reachable. Since this feature's trigger depends on every source reaching a terminal state, an `onFailure` handler is added to the `ingestSource` Inngest function to set `status = 'failed'` once retries are exhausted.
 
 ## Key decisions
 
-- Adopt shadcn/ui (Radix-based primitives) + `next-themes` for dialogs, dropdowns, tooltips, sheet (citation drawer), and theming — not hand-rolled.
-- Citation drawer uses shadcn `Sheet` anchored right, replacing the current hand-rolled fixed-position div in `notebook-workspace.tsx`.
-- Studio feature cards (Study guide, Flashcards, Quiz) are client-side stubs: clicking produces a fake loading state then canned placeholder output. No new API routes or Inngest functions this pass.
-- Backend routes under `src/app/api/**` are unchanged; this is a UI-only pass against existing notebooks/sources/messages endpoints.
-- Below the `lg` breakpoint, the three columns collapse into a tab switcher (Sources / Chat / Studio) instead of a separate mobile component tree.
-- `docs/PRODUCT.md`'s non-goals section gets a small edit noting Study guide/Flashcards/Quiz are now planned (UI landed, generation logic pending), so it stops contradicting the codebase.
+- New `notebooks.intro_generated_at timestamptz` column: null until the one-time intro is generated. Doubles as the "already done" flag and the write-once race guard.
+- New `maybeGenerateNotebookIntro(supabase, notebookId)` in `src/lib/generation/notebookIntro.ts`: no-ops unless `intro_generated_at` is null, every non-deleted source is terminal (`ready`/`failed`), and at least one is `ready`. Samples a few chunks from each ready source, makes two `generate()` calls (title, then a short 2–4 sentence summary) via the existing OpenAI provider (per ADR-006), then does an atomic `UPDATE notebooks SET title=…, intro_generated_at=now() WHERE id=… AND intro_generated_at IS NULL` — a 0-row result means another concurrent run already won, so the result is discarded; a win inserts one `assistant` message (no citations) with the summary.
+- Called as a final step from `ingestSource` (`src/lib/ingestion/index.ts`) on both the normal success path and from the new `onFailure` handler, so it's re-checked whenever any source in the notebook settles.
+- Errors from generation are caught and swallowed (never fail the triggering source's own ingestion), matching the existing per-source title step's non-fatal pattern.
+- Frontend (`notebook-workspace.tsx`) currently fetches notebook title and messages once on mount only. Extend the existing 2s polling effect to also refresh notebook title and messages while sources are processing, and for a short grace window after (while there are ready sources but no messages yet and the title is still the default), so the generated name/summary appear live.
 
 ## Constraints
 
-- No changes to backend/API behavior, ingestion pipeline, or grounding rules (ADR-005, ADR-007, ADR-008) — this is presentation-layer only.
-- Anonymous single-user model stays intact — no auth, sharing, or collaboration UI.
-- Must stay responsive down to mobile width (MVP requirement in `docs/PRODUCT.md`).
+- No new summary/overview tables or revision tracking — stays scoped to a single title + single chat message, generated once.
+- Generation must go through the existing provider abstraction (`src/lib/providers/openai.ts`), never call the OpenAI SDK directly.
+- Must not change per-source ingestion semantics other than adding the trailing check and fixing the failure-status gap.
 
 ## Out of scope
 
-- Real generation logic for Study guide/Flashcards/Quiz (stubbed only).
-- Audio/Video Overview, Mind Map, Reports, Infographic, Data Table, Slide Deck.
-- Web search / "Search the web" sourcing widget.
-- Notes / saved answer excerpts ("Add note").
-- Multiple conversations or conversation history/management.
-- Any auth, sharing, permissions, or multi-user features.
+- The full ARCHITECTURE.md §7 notebook overview (per-source cached summaries, topics with suggested questions, staleness/revision handling, regeneration on later source add/delete).
+- Re-titling or re-summarizing after the first successful batch, ever.
+- A dedicated "summary failed" chat message when every initial source fails — the notebook just stays untitled/empty and becomes eligible again once a later source succeeds.
 
 ## Success criteria
 
-- Notebook list page exists: create, open, rename, delete notebooks, with proper empty/loading states.
-- Workspace renders the three-column dark layout matching the screenshot's structure and density; collapses to a tabbed single column below `lg`.
-- Sources panel: add source, per-source status (processing/ready/failed) with retry, select-all + per-source checkboxes, delete with confirmation.
-- Chat panel: welcome/empty state with overview + suggested questions once generated, message list, citation markers open the right-side overlay drawer with exact passage.
-- Studio panel: three feature cards (Study guide, Flashcards, Quiz) that open a stub generation flow (loading → canned output).
-- Dark theme by default, toggle to light theme works and persists.
+- Adding one or more sources to a brand-new notebook and waiting for them to finish ingesting results in: the notebook title changing from "Untitled notebook" to a generated name, and one assistant message appearing in the chat summarizing the sources — without a manual page reload.
+- If every source in that first batch fails, the notebook stays untitled and the chat stays empty; if a later source succeeds, the intro is generated then instead.
+- Adding more sources after the intro has already been generated once never renames the notebook or posts another summary message again.
+- A source that throws during ingestion now reaches `status = 'failed'` with a `failure_reason` (previously it stayed stuck at `processing` indefinitely).
 - `npm run lint`, `npm run typecheck`, `npm run test`, and `npm run build` all pass.
 
 ## Expected files touched
 
-- `src/app/page.tsx` — rebuilt as notebook list/dashboard
-- `src/app/notebooks/[notebookId]/notebook-workspace.tsx` — rebuilt into three-column shell + header
-- `src/app/layout.tsx`, `src/app/globals.css` — theme provider wiring, shadcn CSS variables
-- `components.json`, `src/lib/utils.ts` — new, from shadcn init
-- `src/components/ui/*` — new shadcn primitives (button, dialog, dropdown-menu, input, tooltip, skeleton, sheet, etc.)
-- `src/components/sources/*`, `src/components/chat/*`, `src/components/studio/*`, `src/components/notebooks/*` — new feature components
-- `src/components/theme-provider.tsx` — new
-- `docs/PRODUCT.md` — small non-goals edit
-- `package.json` / `package-lock.json` — new deps (shadcn-generated primitives, `next-themes`, `lucide-react`)
+- `supabase/migrations/` (new) — add `notebooks.intro_generated_at timestamptz`
+- `src/lib/generation/notebookIntro.ts` (new) — `maybeGenerateNotebookIntro()`
+- `src/lib/ingestion/index.ts` — add `onFailure` handler (sets `status='failed'`) and a trailing `notebook-intro` step
+- `src/app/notebooks/[notebookId]/notebook-workspace.tsx` — extend polling to refresh title + messages
