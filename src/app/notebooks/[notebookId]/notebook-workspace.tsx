@@ -7,6 +7,7 @@ import { SourceList } from '@/components/sources/source-list';
 import { AddSourceDialog } from '@/components/sources/add-source-dialog';
 import type { SourceSummary as Source } from '@/components/sources/source-item';
 import { ChatPanel, type Message } from '@/components/chat/chat-panel';
+import { StudioPanel } from '@/components/studio/studio-panel';
 
 const ACTIVE_STATUSES = new Set(['uploaded', 'processing']);
 
@@ -149,12 +150,8 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     />
   );
 
-  const studioPanel = (
-    <section className="flex flex-col gap-3 p-4">
-      <h2 className="text-lg font-medium">Studio</h2>
-      <p className="text-sm text-zinc-500">Studio output will be saved here.</p>
-    </section>
-  );
+  const readySourceCount = sources.filter((s) => s.status === 'ready').length;
+  const studioPanel = <StudioPanel readySourceCount={readySourceCount} />;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
