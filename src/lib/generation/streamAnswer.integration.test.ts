@@ -4,6 +4,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { createPrimaryTestClient } from '@/lib/supabase/test-helpers';
 import { embed } from '@/lib/providers/openai';
 import { streamAnswer, REFUSAL_TEXT, type AskQuestionEvent } from './index';
+import { NotebookBusyError } from './lease';
 
 const hasRealEnv = Boolean(
   process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -101,5 +102,77 @@ describe.skipIf(!hasRealEnv)('streamAnswer', () => {
     expect(refusedDone.result.answer).toBe(REFUSAL_TEXT);
     expect(refusedDone.result.citations).toEqual([]);
     expect(refusedDone.result.followUpQuestions).toHaveLength(3);
+  }, 60000);
+
+  it('persists a pending assistant message before generation completes', async () => {
+    const user = await createPrimaryTestClient();
+    const { data: notebook } = await user
+      .from('notebooks')
+      .insert({ title: 'Pending row test' })
+      .select()
+      .single();
+    createdNotebookIds.push(notebook!.id);
+    const { data: source } = await user
+      .from('sources')
+      .insert({ notebook_id: notebook!.id, type: 'pasted_text', title: 'Facts', status: 'ready' })
+      .select()
+      .single();
+    const text = 'The Eiffel Tower is located in Paris, France.';
+    const embedding = await embed(text);
+    await user
+      .from('source_chunks')
+      .insert({ source_id: source!.id, chunk_index: 0, content: text, embedding });
+
+    const generator = streamAnswer(user, {
+      notebookId: notebook!.id,
+      question: 'Where is the Eiffel Tower?',
+    });
+    let event = await generator.next();
+    while (!event.done && event.value.type !== 'passages') {
+      event = await generator.next();
+    }
+
+    const { data: rows } = await user
+      .from('messages')
+      .select('status')
+      .eq('notebook_id', notebook!.id)
+      .eq('role', 'assistant');
+    expect(rows?.some((r) => r.status === 'pending')).toBe(true);
+
+    // Drain to completion so the lease is released and afterAll cleanup isn't blocked.
+    while (!event.done) event = await generator.next();
+  }, 60000);
+
+  it('rejects a second generation while the notebook lease is held', async () => {
+    const user = await createPrimaryTestClient();
+    const { data: notebook } = await user
+      .from('notebooks')
+      .insert({ title: 'Lease busy test' })
+      .select()
+      .single();
+    createdNotebookIds.push(notebook!.id);
+    const { data: source } = await user
+      .from('sources')
+      .insert({ notebook_id: notebook!.id, type: 'pasted_text', title: 'Facts', status: 'ready' })
+      .select()
+      .single();
+    const text = 'The Great Wall of China is an ancient series of fortifications.';
+    const embedding = await embed(text);
+    await user
+      .from('source_chunks')
+      .insert({ source_id: source!.id, chunk_index: 0, content: text, embedding });
+
+    const first = streamAnswer(user, { notebookId: notebook!.id, question: 'What is the Great Wall?' });
+    await first.next(); // starts generation, claims the lease
+
+    const second = streamAnswer(user, {
+      notebookId: notebook!.id,
+      question: 'What is the Great Wall?',
+    });
+    await expect(second.next()).rejects.toThrow(NotebookBusyError);
+
+    // Drain the first to completion so the lease is released and afterAll cleanup isn't blocked.
+    let event = await first.next();
+    while (!event.done) event = await first.next();
   }, 60000);
 });
