@@ -152,6 +152,82 @@ describe('NotebookWorkspace', () => {
     expect(screen.getAllByText('This is about cats.').length).toBeGreaterThan(0);
   });
 
+  it('shows a Retry button for a failed answer and re-streams it via the retry endpoint on click', async () => {
+    let getMessagesCallCount = 0;
+    let resolveRetryPost: ((value: Response) => void) | undefined;
+    const userMessage = {
+      id: 'u1',
+      role: 'user',
+      content: 'What is this about?',
+      status: 'complete',
+      created_at: '',
+      follow_up_questions: null,
+      reasoning: null,
+      citations: [],
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST' && url.endsWith('/retry')) {
+        return new Promise<Response>((resolve) => {
+          resolveRetryPost = resolve;
+        });
+      }
+      if (url.endsWith('/sources')) return jsonResponse([]);
+      if (url.endsWith('/messages')) {
+        getMessagesCallCount += 1;
+        if (getMessagesCallCount === 1) {
+          return jsonResponse([
+            userMessage,
+            {
+              id: 'a1',
+              role: 'assistant',
+              content: '',
+              status: 'failed',
+              created_at: '',
+              follow_up_questions: null,
+              reasoning: null,
+              citations: [],
+            },
+          ]);
+        }
+        return jsonResponse([
+          userMessage,
+          {
+            id: 'a1',
+            role: 'assistant',
+            content: 'This is about cats.',
+            status: 'complete',
+            created_at: '',
+            follow_up_questions: [],
+            reasoning: null,
+            citations: [],
+          },
+        ]);
+      }
+      return jsonResponse({ id: 'n1', title: 'Untitled notebook' });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<NotebookWorkspace notebookId="n1" />);
+    const [retryButton] = await screen.findAllByTestId('retry-answer');
+    const user = userEvent.setup();
+    await user.click(retryButton);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/notebooks/n1/messages/a1/retry',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    );
+
+    resolveRetryPost?.(
+      await streamResponse([{ type: 'answer_delta', text: 'This is about cats.' }]),
+    );
+
+    await waitFor(() => expect(screen.queryAllByTestId('retry-answer')).toHaveLength(0));
+    expect(screen.getAllByText('This is about cats.').length).toBeGreaterThan(0);
+  });
+
   it('saves chat settings from the Configure Chat dialog', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);

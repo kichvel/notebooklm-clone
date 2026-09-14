@@ -38,6 +38,8 @@ function renderPanel(
   asking = false,
   sourceCount = 0,
   streaming: { reasoning: string; answer: string; citations: Message['citations'] } | null = null,
+  retryingMessageId: string | null = null,
+  onRetry = vi.fn(),
 ) {
   return render(
     <ChatPanel
@@ -53,6 +55,8 @@ function renderPanel(
       chatSettings={defaultChatSettings}
       onUpdateChatSettings={vi.fn()}
       streaming={streaming}
+      retryingMessageId={retryingMessageId}
+      onRetry={onRetry}
     />,
   );
 }
@@ -147,6 +151,8 @@ describe('ChatPanel', () => {
         chatSettings={defaultChatSettings}
         onUpdateChatSettings={vi.fn()}
         streaming={null}
+        retryingMessageId={null}
+        onRetry={vi.fn()}
       />,
     );
     expect(scrollIntoViewMock.mock.calls.length).toBeGreaterThan(callsAfterMount);
@@ -172,6 +178,8 @@ describe('ChatPanel', () => {
         chatSettings={defaultChatSettings}
         onUpdateChatSettings={vi.fn()}
         streaming={null}
+        retryingMessageId={null}
+        onRetry={vi.fn()}
       />,
     );
     expect(scrollIntoViewMock.mock.calls.length).toBeGreaterThan(callsBeforeAnswer);
@@ -212,5 +220,37 @@ describe('ChatPanel', () => {
     expect(screen.getByText(/looking at source 2/i)).toBeVisible();
     expect(screen.getByText('Cats are mammals.')).toBeInTheDocument();
     expect(screen.queryByText('Thinking…')).not.toBeInTheDocument();
+  });
+
+  it('shows a Retry button for a failed message and calls onRetry with its id', async () => {
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
+    renderPanel(
+      [{ ...messageWithCitation, id: 'failed-1', status: 'failed', content: 'partial answer' }],
+      vi.fn(),
+      false,
+      0,
+      null,
+      null,
+      onRetry,
+    );
+    const retryButton = screen.getByTestId('retry-answer');
+    await user.click(retryButton);
+    expect(onRetry).toHaveBeenCalledWith('failed-1');
+  });
+
+  it('renders live streaming content in place of a retrying message instead of its stored content', () => {
+    renderPanel(
+      [{ ...messageWithCitation, id: 'failed-1', status: 'failed', content: 'stale content' }],
+      vi.fn(),
+      true,
+      0,
+      { reasoning: '', answer: 'fresh retried answer', citations: [] },
+      'failed-1',
+    );
+    expect(screen.getByText('fresh retried answer')).toBeInTheDocument();
+    expect(screen.queryByText('stale content')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('retry-answer')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('asking-indicator')).not.toBeInTheDocument();
   });
 });
