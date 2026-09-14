@@ -4,7 +4,7 @@ import OpenAI, { toFile } from 'openai';
 const EMBEDDING_MODEL = 'text-embedding-3-small';
 const GENERATION_MODEL = 'gpt-4o-mini';
 export const CAPABLE_GENERATION_MODEL = 'gpt-4.1';
-export const REASONING_GENERATION_MODEL = 'gpt-5.1-mini';
+export const REASONING_GENERATION_MODEL = 'o4-mini';
 const TRANSCRIPTION_MODEL = 'whisper-1';
 
 // OpenAI's /audio/transcriptions endpoint limit per request
