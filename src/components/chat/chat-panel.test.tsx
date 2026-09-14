@@ -110,6 +110,35 @@ describe('ChatPanel', () => {
     expect(screen.getByTestId('asking-indicator')).toBeInTheDocument();
   });
 
+  it('scrolls the processing indicator into view when it appears', () => {
+    const scrollIntoViewMock = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoViewMock;
+
+    const { rerender } = renderPanel([messageWithCitation], vi.fn(), false);
+    expect(scrollIntoViewMock).not.toHaveBeenCalled();
+
+    rerender(
+      <ChatPanel
+        messages={[messageWithCitation]}
+        question=""
+        onQuestionChange={vi.fn()}
+        onAsk={vi.fn()}
+        asking={true}
+        askError={null}
+        hasProcessingSources={false}
+        onSelectFollowUp={vi.fn()}
+        sourceCount={0}
+      />,
+    );
+
+    expect(scrollIntoViewMock).toHaveBeenCalledWith(
+      expect.objectContaining({ behavior: 'smooth', block: 'end' }),
+    );
+
+    // @ts-expect-error -- jsdom doesn't implement scrollIntoView; remove the test stub
+    delete HTMLElement.prototype.scrollIntoView;
+  });
+
   it('shows a "Chat" header', () => {
     renderPanel([]);
     expect(screen.getByRole('heading', { name: 'Chat' })).toBeInTheDocument();

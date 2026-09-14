@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Loader2Icon, SendIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -73,6 +73,13 @@ export function ChatPanel({
   sourceCount: number;
 }) {
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
+  const askingIndicatorRef = useRef<HTMLLIElement>(null);
+
+  useEffect(() => {
+    if (asking) {
+      askingIndicatorRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' });
+    }
+  }, [asking]);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -118,7 +125,7 @@ export function ChatPanel({
               </li>
             ))}
             {asking && (
-              <li className="flex justify-start" aria-live="polite">
+              <li ref={askingIndicatorRef} className="flex justify-start" aria-live="polite">
                 <div
                   data-testid="asking-indicator"
                   className="flex items-center gap-2 text-sm text-muted-foreground"
