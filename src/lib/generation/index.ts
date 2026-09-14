@@ -2,6 +2,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { CAPABLE_GENERATION_MODEL, embed, generate } from '@/lib/providers/openai';
 import { search } from '@/lib/retrieval';
+import { followUpPromptInstruction, parseFollowUps, FALLBACK_FOLLOW_UP_QUESTIONS } from './followUps';
 
 export const REFUSAL_TEXT =
   "I don't have enough information in the selected sources to answer that.";
@@ -35,6 +36,7 @@ export interface AskQuestionResult {
   status: 'complete' | 'refused';
   answer: string;
   citations: Citation[];
+  followUpQuestions: string[];
 }
 
 function buildSystemPrompt(passageCount: number): string {
@@ -42,13 +44,15 @@ function buildSystemPrompt(passageCount: number): string {
     `You answer questions using ONLY the numbered passages below as evidence. Passages are numbered [1] through [${passageCount}].`,
     'Cite every factual claim with the passage number(s) it is drawn from, in square brackets, e.g. "Cats are mammals [1]."',
     'Never use knowledge outside the passages.',
-    `If the passages do not contain enough information to answer, respond with exactly this text and nothing else: "${REFUSAL_TEXT}"`,
+    `If the passages do not contain enough information to answer, write exactly this text as your answer, before the follow-up section: "${REFUSAL_TEXT}"`,
+    followUpPromptInstruction(),
   ].join('\n');
 }
 
 async function persistRefusal(
   supabase: SupabaseClient,
   notebookId: string,
+  followUpQuestions: string[] = FALLBACK_FOLLOW_UP_QUESTIONS,
 ): Promise<AskQuestionResult> {
   const { data, error } = await supabase
     .from('messages')
@@ -57,11 +61,12 @@ async function persistRefusal(
       role: 'assistant',
       content: REFUSAL_TEXT,
       status: 'refused',
+      follow_up_questions: followUpQuestions,
     })
     .select()
     .single();
   if (error) throw error;
-  return { messageId: data.id, status: 'refused', answer: REFUSAL_TEXT, citations: [] };
+  return { messageId: data.id, status: 'refused', answer: REFUSAL_TEXT, citations: [], followUpQuestions };
 }
 
 export async function askQuestion(
@@ -79,13 +84,14 @@ export async function askQuestion(
 
   const system = buildSystemPrompt(results.length);
   const passagesBlock = results.map((r, i) => `[${i + 1}] ${r.content}`).join('\n\n');
-  const rawAnswer = (
+  const generated = (
     await generate({
       system,
       prompt: `Passages:\n${passagesBlock}\n\nQuestion: ${question}`,
       model: CAPABLE_GENERATION_MODEL,
     })
   ).trim();
+  const { text: rawAnswer, followUpQuestions } = parseFollowUps(generated);
 
   const validLabels = new Map<number, (typeof results)[number]>();
   for (const match of rawAnswer.matchAll(/\[(\d+)\]/g)) {
@@ -93,7 +99,7 @@ export async function askQuestion(
     if (n >= 1 && n <= results.length) validLabels.set(n, results[n - 1]);
   }
   if (rawAnswer === REFUSAL_TEXT || validLabels.size === 0)
-    return persistRefusal(supabase, notebookId);
+    return persistRefusal(supabase, notebookId, followUpQuestions);
 
   const citedSourceIds = [...new Set([...validLabels.values()].map((r) => r.sourceId))];
   const { data: sources, error: sourcesError } = await supabase
@@ -112,6 +118,7 @@ export async function askQuestion(
       content: rawAnswer,
       status: 'complete',
       selected_source_ids: selectedSourceIds,
+      follow_up_questions: followUpQuestions,
     })
     .select()
     .single();
@@ -155,5 +162,6 @@ export async function askQuestion(
       sourceUrl: row.source_url,
       content: row.content_snapshot,
     })),
+    followUpQuestions,
   };
 }

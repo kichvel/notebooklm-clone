@@ -163,15 +163,14 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     }
   }
 
-  async function handleAsk(event: React.FormEvent) {
-    event.preventDefault();
+  async function submitQuestion(text: string) {
     setAsking(true);
     setAskError(null);
     try {
       const response = await fetch(`/api/notebooks/${notebookId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, sourceIds: [...selectedSourceIds] }),
+        body: JSON.stringify({ question: text, sourceIds: [...selectedSourceIds] }),
       });
       if (!response.ok) throw new Error('Failed to ask question');
       setQuestion('');
@@ -181,6 +180,15 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     } finally {
       setAsking(false);
     }
+  }
+
+  async function handleAsk(event: React.FormEvent) {
+    event.preventDefault();
+    await submitQuestion(question);
+  }
+
+  function handleSelectFollowUp(text: string) {
+    void submitQuestion(text);
   }
 
   const sourcesHeaderAction = (
@@ -216,6 +224,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
       asking={asking}
       askError={askError}
       hasProcessingSources={hasProcessingSources}
+      onSelectFollowUp={handleSelectFollowUp}
     />
   );
 

@@ -43,7 +43,7 @@ export async function GET(
 
   const { data: messages, error } = await supabase
     .from('messages')
-    .select('id, role, content, status, created_at')
+    .select('id, role, content, status, created_at, follow_up_questions')
     .eq('notebook_id', notebookId)
     .order('created_at');
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

@@ -84,6 +84,14 @@ describe.skipIf(!hasRealEnv)('askQuestion', () => {
       .eq('message_id', answered.messageId);
     expect(persistedCitations!.length).toBeGreaterThanOrEqual(1);
 
+    const { data: persistedRow } = await user
+      .from('messages')
+      .select('follow_up_questions')
+      .eq('id', answered.messageId)
+      .single();
+    expect(persistedRow?.follow_up_questions).toHaveLength(3);
+    expect(answered.followUpQuestions).toHaveLength(3);
+
     const refused = await askQuestion(user, {
       notebookId: notebook!.id,
       question: 'What is the capital of France?',
@@ -92,5 +100,6 @@ describe.skipIf(!hasRealEnv)('askQuestion', () => {
     expect(refused.status).toBe('refused');
     expect(refused.answer).toBe(REFUSAL_TEXT);
     expect(refused.citations).toEqual([]);
+    expect(refused.followUpQuestions).toHaveLength(3);
   }, 30000);
 });

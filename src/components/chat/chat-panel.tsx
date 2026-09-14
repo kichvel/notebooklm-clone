@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { WelcomeState } from './welcome-state';
 import { CitationDrawer, type Citation } from './citation-drawer';
+import { FollowUpChips } from './follow-up-chips';
 
 export interface Message {
   id: string;
@@ -13,6 +14,7 @@ export interface Message {
   content: string;
   status: 'complete' | 'refused' | 'failed';
   created_at: string;
+  follow_up_questions: string[] | null;
   citations: Citation[];
 }
 
@@ -57,6 +59,7 @@ export function ChatPanel({
   asking,
   askError,
   hasProcessingSources,
+  onSelectFollowUp,
 }: {
   messages: Message[];
   question: string;
@@ -65,6 +68,7 @@ export function ChatPanel({
   asking: boolean;
   askError: string | null;
   hasProcessingSources: boolean;
+  onSelectFollowUp: (question: string) => void;
 }) {
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
 
@@ -84,11 +88,19 @@ export function ChatPanel({
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {message.role === 'assistant' ? (
-                  <AnswerText
-                    content={message.content}
-                    citations={message.citations}
-                    onOpenCitation={setOpenCitation}
-                  />
+                  <div>
+                    <AnswerText
+                      content={message.content}
+                      citations={message.citations}
+                      onOpenCitation={setOpenCitation}
+                    />
+                    {message.follow_up_questions && message.follow_up_questions.length > 0 && (
+                      <FollowUpChips
+                        questions={message.follow_up_questions}
+                        onSelect={onSelectFollowUp}
+                      />
+                    )}
+                  </div>
                 ) : (
                   <p
                     data-testid="chat-bubble-user"
