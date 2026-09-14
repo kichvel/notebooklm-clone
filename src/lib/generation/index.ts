@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { CAPABLE_GENERATION_MODEL, embed, generate } from '@/lib/providers/openai';
 import { search } from '@/lib/retrieval';
 import { followUpPromptInstruction, parseFollowUps, FALLBACK_FOLLOW_UP_QUESTIONS } from './followUps';
+import type { ChatSettings } from '@/lib/notebooks/chatSettings';
 
 export const REFUSAL_TEXT =
   "I don't have enough information in the selected sources to answer that.";
@@ -39,14 +40,27 @@ export interface AskQuestionResult {
   followUpQuestions: string[];
 }
 
-function buildSystemPrompt(passageCount: number): string {
-  return [
+const LENGTH_INSTRUCTIONS: Record<ChatSettings['chatAnswerLength'], string> = {
+  shorter: 'Answer concisely, in a short paragraph or two.',
+  default:
+    'Answer thoroughly: a few solid paragraphs covering relevant nuance, context, and examples drawn from the passages.',
+  longer:
+    'Answer comprehensively and in detail: explore the topic thoroughly, using multiple paragraphs or sections as warranted by the passages.',
+};
+
+export function buildSystemPrompt(passageCount: number, chatSettings: ChatSettings): string {
+  const lines = [
     `You answer questions using ONLY the numbered passages below as evidence. Passages are numbered [1] through [${passageCount}].`,
     'Cite every factual claim with the passage number(s) it is drawn from, in square brackets, e.g. "Cats are mammals [1]."',
     'Never use knowledge outside the passages.',
     `If the passages do not contain enough information to answer, write exactly this text as your answer, before the follow-up section: "${REFUSAL_TEXT}"`,
-    followUpPromptInstruction(),
-  ].join('\n');
+    LENGTH_INSTRUCTIONS[chatSettings.chatAnswerLength],
+  ];
+  if (chatSettings.chatStyle === 'custom' && chatSettings.chatCustomStyle) {
+    lines.push(`Adopt this conversational goal, style, or role: ${chatSettings.chatCustomStyle}`);
+  }
+  lines.push(followUpPromptInstruction());
+  return lines.join('\n');
 }
 
 async function persistRefusal(
@@ -82,7 +96,19 @@ export async function askQuestion(
   const results = await search(supabase, { notebookId, sourceIds, queryEmbedding, matchCount: 8 });
   if (results.length === 0) return persistRefusal(supabase, notebookId);
 
-  const system = buildSystemPrompt(results.length);
+  const { data: notebook, error: notebookError } = await supabase
+    .from('notebooks')
+    .select('chat_style, chat_custom_style, chat_answer_length')
+    .eq('id', notebookId)
+    .single();
+  if (notebookError) throw notebookError;
+  const chatSettings: ChatSettings = {
+    chatStyle: notebook.chat_style,
+    chatCustomStyle: notebook.chat_custom_style,
+    chatAnswerLength: notebook.chat_answer_length,
+  };
+
+  const system = buildSystemPrompt(results.length, chatSettings);
   const passagesBlock = results.map((r, i) => `[${i + 1}] ${r.content}`).join('\n\n');
   const generated = (
     await generate({

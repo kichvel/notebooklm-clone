@@ -51,7 +51,7 @@ The following describes responsibilities rather than prescribing every column or
 | Entity | Key data and purpose |
 | --- | --- |
 | Anonymous user | Supabase Auth identity; ownership root |
-| Notebook | Owner, editable title, timestamps, source revision, overview state and published revision |
+| Notebook | Owner, editable title, timestamps, source revision, overview state and published revision, chat answer style/custom style and answer length settings |
 | Source | Notebook, type, title/origin, private object paths, batch ID, content version/hash, processing state, current step, failure details, deletion marker |
 | Processing step | Source/version, step name, status, attempts, timestamps, checkpoint references, safe error details |
 | Source chunk | Source/version, stable ID, ordered text, page/section metadata, optional offsets, embedding and embedding configuration |
@@ -122,7 +122,7 @@ Cache keys include source content version and summary model/prompt configuration
 4. Embed the query with the configured embedding model.
 5. Search vectors within the owned notebook, selected source IDs, ready state, and current source versions. Apply filters during retrieval, not after an unrestricted search.
 6. Assemble a configurable Top-K result set within a maximum context budget, with stable passage IDs and provenance.
-7. Generate from those passages only, returning either a supported answer with passage references or an explicit insufficient-evidence response.
+7. Generate from those passages only, returning either a supported answer with passage references or an explicit insufficient-evidence response. The system prompt also carries the notebook's saved chat style (default, or a custom role/tone instruction) and answer length (shorter/default/longer), read fresh at generation time — changing these settings affects future questions only, the same as changing source selection, and does not apply to notebook overview generation.
 8. Validate the completed structure and citation references, then persist the completed answer and citation mappings.
 
 Similarity scores guide retrieval; they are not proof of answerability. An empty result set produces an explicit limitation. Unsupported questions are refused without supplementation from general model knowledge. Source content is treated as evidence, not as instructions to change system behavior.

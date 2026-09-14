@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input';
 import { WelcomeState } from './welcome-state';
 import { CitationDrawer, type Citation } from './citation-drawer';
 import { FollowUpChips } from './follow-up-chips';
+import { ConfigureChatDialog } from './configure-chat-dialog';
+import type { ChatSettings } from '@/lib/notebooks/chatSettings';
 
 export interface Message {
   id: string;
@@ -61,6 +63,8 @@ export function ChatPanel({
   hasProcessingSources,
   onSelectFollowUp,
   sourceCount,
+  chatSettings,
+  onUpdateChatSettings,
 }: {
   messages: Message[];
   question: string;
@@ -71,6 +75,8 @@ export function ChatPanel({
   hasProcessingSources: boolean;
   onSelectFollowUp: (question: string) => void;
   sourceCount: number;
+  chatSettings: ChatSettings;
+  onUpdateChatSettings: (settings: ChatSettings) => Promise<void>;
 }) {
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -81,8 +87,9 @@ export function ChatPanel({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center border-b border-border px-4 py-3">
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
         <h2 className="text-sm font-medium text-foreground">Chat</h2>
+        <ConfigureChatDialog settings={chatSettings} onSave={onUpdateChatSettings} />
       </div>
       <div className="flex-1 overflow-y-auto">
         {messages.length === 0 && !asking ? (

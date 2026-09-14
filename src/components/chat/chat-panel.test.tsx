@@ -25,6 +25,12 @@ const messageWithCitation: Message = {
   ],
 };
 
+const defaultChatSettings = {
+  chatStyle: 'default' as const,
+  chatCustomStyle: null,
+  chatAnswerLength: 'default' as const,
+};
+
 function renderPanel(
   messages: Message[] = [],
   onSelectFollowUp = vi.fn(),
@@ -42,6 +48,8 @@ function renderPanel(
       hasProcessingSources={false}
       onSelectFollowUp={onSelectFollowUp}
       sourceCount={sourceCount}
+      chatSettings={defaultChatSettings}
+      onUpdateChatSettings={vi.fn()}
     />,
   );
 }
@@ -132,6 +140,8 @@ describe('ChatPanel', () => {
         hasProcessingSources={false}
         onSelectFollowUp={vi.fn()}
         sourceCount={0}
+        chatSettings={defaultChatSettings}
+        onUpdateChatSettings={vi.fn()}
       />,
     );
     expect(scrollIntoViewMock.mock.calls.length).toBeGreaterThan(callsAfterMount);
@@ -154,6 +164,8 @@ describe('ChatPanel', () => {
         hasProcessingSources={false}
         onSelectFollowUp={vi.fn()}
         sourceCount={0}
+        chatSettings={defaultChatSettings}
+        onUpdateChatSettings={vi.fn()}
       />,
     );
     expect(scrollIntoViewMock.mock.calls.length).toBeGreaterThan(callsBeforeAnswer);
@@ -170,5 +182,12 @@ describe('ChatPanel', () => {
   it('shows the current source count under the send button', () => {
     renderPanel([], vi.fn(), false, 3);
     expect(screen.getByText('Sources: 3')).toBeInTheDocument();
+  });
+
+  it('opens Configure Chat from the header settings icon', async () => {
+    const user = userEvent.setup();
+    renderPanel([]);
+    await user.click(screen.getByRole('button', { name: /configure chat/i }));
+    expect(screen.getByRole('heading', { name: 'Configure Chat' })).toBeInTheDocument();
   });
 });
