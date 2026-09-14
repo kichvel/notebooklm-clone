@@ -51,4 +51,19 @@ describe('ChatPanel', () => {
     await user.click(screen.getByRole('button', { name: '[1]' }));
     expect(await screen.findByText(messageWithCitation.citations[0].content)).toBeInTheDocument();
   });
+
+  it('renders user messages as a bubble distinct from assistant text', () => {
+    renderPanel([
+      {
+        id: 'u1',
+        role: 'user',
+        content: 'Hello there',
+        status: 'complete',
+        created_at: '',
+        citations: [],
+      },
+      messageWithCitation,
+    ]);
+    expect(screen.getByTestId('chat-bubble-user')).toHaveTextContent('Hello there');
+  });
 });
