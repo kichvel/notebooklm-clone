@@ -8,6 +8,7 @@ import { AddSourceDialog } from '@/components/sources/add-source-dialog';
 import type { SourceSummary as Source } from '@/components/sources/source-item';
 import { ChatPanel, type Message } from '@/components/chat/chat-panel';
 import { StudioPanel } from '@/components/studio/studio-panel';
+import type { ChatSettings } from '@/lib/notebooks/chatSettings';
 
 const ACTIVE_STATUSES = new Set(['uploaded', 'processing']);
 
@@ -22,12 +23,32 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
+  const [chatSettings, setChatSettings] = useState<ChatSettings>({
+    chatStyle: 'default',
+    chatCustomStyle: null,
+    chatAnswerLength: 'default',
+  });
 
   async function refreshNotebook() {
     const response = await fetch(`/api/notebooks/${notebookId}`);
     if (!response.ok) return;
     const notebook = await response.json();
     setNotebookTitle(notebook.title);
+    setChatSettings({
+      chatStyle: notebook.chat_style ?? 'default',
+      chatCustomStyle: notebook.chat_custom_style ?? null,
+      chatAnswerLength: notebook.chat_answer_length ?? 'default',
+    });
+  }
+
+  async function handleUpdateChatSettings(next: ChatSettings) {
+    const response = await fetch(`/api/notebooks/${notebookId}/chat-settings`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(next),
+    });
+    if (!response.ok) throw new Error('Failed to update chat settings');
+    setChatSettings(next);
   }
 
   async function refreshSources() {
@@ -241,6 +262,8 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
       hasProcessingSources={hasProcessingSources}
       onSelectFollowUp={handleSelectFollowUp}
       sourceCount={selectedSourceIds.size}
+      chatSettings={chatSettings}
+      onUpdateChatSettings={handleUpdateChatSettings}
     />
   );
 

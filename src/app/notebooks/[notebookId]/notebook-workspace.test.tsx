@@ -138,4 +138,37 @@ describe('NotebookWorkspace', () => {
     expect(screen.getAllByTestId('chat-bubble-user')[0]).toHaveTextContent('What is this about?');
     expect(screen.getAllByText('This is about cats.').length).toBeGreaterThan(0);
   });
+
+  it('saves chat settings from the Configure Chat dialog', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/sources')) return jsonResponse([]);
+      if (url.endsWith('/messages')) return jsonResponse([]);
+      if (url.endsWith('/chat-settings')) return jsonResponse({ id: 'n1' });
+      return jsonResponse({ id: 'n1', title: 'Untitled notebook' });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<NotebookWorkspace notebookId="n1" />);
+    const user = userEvent.setup();
+    const [settingsButton] = await screen.findAllByRole('button', { name: /configure chat/i });
+    await user.click(settingsButton);
+    await user.click(screen.getByRole('button', { name: 'Custom' }));
+    await user.type(screen.getByPlaceholderText(/respond at a phd student level/i), 'Be a pirate');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/notebooks/n1/chat-settings',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({
+            chatStyle: 'custom',
+            chatCustomStyle: 'Be a pirate',
+            chatAnswerLength: 'default',
+          }),
+        }),
+      ),
+    );
+  });
 });
