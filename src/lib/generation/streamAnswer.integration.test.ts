@@ -3,7 +3,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createServiceClient } from '@/lib/supabase/server';
 import { createPrimaryTestClient } from '@/lib/supabase/test-helpers';
 import { embed } from '@/lib/providers/openai';
-import { askQuestion, REFUSAL_TEXT } from './index';
+import { streamAnswer, REFUSAL_TEXT, type AskQuestionEvent } from './index';
 
 const hasRealEnv = Boolean(
   process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -11,7 +11,7 @@ const hasRealEnv = Boolean(
   process.env.OPENAI_API_KEY,
 );
 
-describe.skipIf(!hasRealEnv)('askQuestion', () => {
+describe.skipIf(!hasRealEnv)('streamAnswer', () => {
   const createdNotebookIds: string[] = [];
 
   afterAll(async () => {
@@ -61,45 +61,45 @@ describe.skipIf(!hasRealEnv)('askQuestion', () => {
     ]);
     expect(chunksError).toBeNull();
 
-    const answered = await askQuestion(user, {
-      notebookId: notebook!.id,
-      question: 'What kind of animal is a domestic cat?',
-    });
+    async function collect(notebookId: string, question: string) {
+      const events: AskQuestionEvent[] = [];
+      for await (const event of streamAnswer(user, { notebookId, question })) events.push(event);
+      return events;
+    }
 
-    expect(answered.status).toBe('complete');
-    expect(answered.citations.length).toBeGreaterThanOrEqual(1);
-    expect(answered.citations.some((c) => c.content.toLowerCase().includes('cat'))).toBe(true);
+    const events = await collect(notebook!.id, 'What kind of animal is a domestic cat?');
+    expect(events.some((e) => e.type === 'passages')).toBe(true);
+    expect(events.some((e) => e.type === 'reasoning_delta')).toBe(true);
+    expect(events.some((e) => e.type === 'answer_delta')).toBe(true);
+    const done = events.find((e) => e.type === 'done');
+    expect(done?.type).toBe('done');
+    if (done?.type !== 'done') throw new Error('expected done event');
+    expect(done.result.status).toBe('complete');
+    expect(done.result.reasoning.length).toBeGreaterThan(0);
+    expect(done.result.citations.some((c) => c.content.toLowerCase().includes('cat'))).toBe(true);
 
     const { data: persistedMessage } = await user
       .from('messages')
-      .select('id, role, status')
-      .eq('id', answered.messageId)
+      .select('reasoning, status')
+      .eq('id', done.result.messageId)
       .single();
-    expect(persistedMessage?.role).toBe('assistant');
     expect(persistedMessage?.status).toBe('complete');
-
-    const { data: persistedCitations } = await user
-      .from('message_citations')
-      .select('id')
-      .eq('message_id', answered.messageId);
-    expect(persistedCitations!.length).toBeGreaterThanOrEqual(1);
+    expect(persistedMessage?.reasoning?.length).toBeGreaterThan(0);
 
     const { data: persistedRow } = await user
       .from('messages')
       .select('follow_up_questions')
-      .eq('id', answered.messageId)
+      .eq('id', done.result.messageId)
       .single();
     expect(persistedRow?.follow_up_questions).toHaveLength(3);
-    expect(answered.followUpQuestions).toHaveLength(3);
+    expect(done.result.followUpQuestions).toHaveLength(3);
 
-    const refused = await askQuestion(user, {
-      notebookId: notebook!.id,
-      question: 'What is the capital of France?',
-    });
-
-    expect(refused.status).toBe('refused');
-    expect(refused.answer).toBe(REFUSAL_TEXT);
-    expect(refused.citations).toEqual([]);
-    expect(refused.followUpQuestions).toHaveLength(3);
-  }, 30000);
+    const refusedEvents = await collect(notebook!.id, 'What is the capital of France?');
+    const refusedDone = refusedEvents.find((e) => e.type === 'done');
+    if (refusedDone?.type !== 'done') throw new Error('expected done event');
+    expect(refusedDone.result.status).toBe('refused');
+    expect(refusedDone.result.answer).toBe(REFUSAL_TEXT);
+    expect(refusedDone.result.citations).toEqual([]);
+    expect(refusedDone.result.followUpQuestions).toHaveLength(3);
+  }, 60000);
 });

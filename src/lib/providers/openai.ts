@@ -4,6 +4,7 @@ import OpenAI, { toFile } from 'openai';
 const EMBEDDING_MODEL = 'text-embedding-3-small';
 const GENERATION_MODEL = 'gpt-4o-mini';
 export const CAPABLE_GENERATION_MODEL = 'gpt-4.1';
+export const REASONING_GENERATION_MODEL = 'gpt-5.1-mini';
 const TRANSCRIPTION_MODEL = 'whisper-1';
 
 // OpenAI's /audio/transcriptions endpoint limit per request
@@ -44,6 +45,36 @@ export async function generate({
     ],
   });
   return response.choices[0]?.message?.content ?? '';
+}
+
+export async function* generateStreaming({
+  system,
+  prompt,
+  model,
+  maxOutputTokens = 2048,
+}: {
+  system: string;
+  prompt: string;
+  model: string;
+  maxOutputTokens?: number;
+}): AsyncGenerator<{ type: 'reasoning' | 'answer'; text: string }> {
+  const stream = await getClient().responses.create({
+    model,
+    instructions: system,
+    input: prompt,
+    reasoning: { effort: 'medium', summary: 'auto' },
+    max_output_tokens: maxOutputTokens,
+    stream: true,
+  });
+  for await (const event of stream) {
+    if (event.type === 'response.reasoning_summary_text.delta') {
+      yield { type: 'reasoning', text: event.delta };
+    } else if (event.type === 'response.output_text.delta') {
+      yield { type: 'answer', text: event.delta };
+    } else if (event.type === 'response.failed' || event.type === 'response.incomplete') {
+      throw new Error(`Generation ${event.type}`);
+    }
+  }
 }
 
 export interface TranscribedSegment {
