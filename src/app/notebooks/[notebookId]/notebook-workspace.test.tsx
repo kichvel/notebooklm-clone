@@ -79,4 +79,63 @@ describe('NotebookWorkspace', () => {
 
     resolvePost?.({ ok: true, json: () => Promise.resolve({ id: 'm1' }) } as Response);
   });
+
+  it('shows the sent message immediately with a processing indicator, then swaps in the persisted answer', async () => {
+    let resolvePost: ((value: Response) => void) | undefined;
+    let getMessagesCallCount = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST' && url.endsWith('/messages')) {
+        return new Promise<Response>((resolve) => {
+          resolvePost = resolve;
+        });
+      }
+      if (url.endsWith('/sources')) return jsonResponse([]);
+      if (url.endsWith('/messages')) {
+        getMessagesCallCount += 1;
+        if (getMessagesCallCount === 1) return jsonResponse([]);
+        return jsonResponse([
+          {
+            id: 'u1',
+            role: 'user',
+            content: 'What is this about?',
+            status: 'complete',
+            created_at: '',
+            follow_up_questions: null,
+            citations: [],
+          },
+          {
+            id: 'a1',
+            role: 'assistant',
+            content: 'This is about cats.',
+            status: 'complete',
+            created_at: '',
+            follow_up_questions: ['What do cats eat?'],
+            citations: [],
+          },
+        ]);
+      }
+      return jsonResponse({ id: 'n1', title: 'Untitled notebook' });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<NotebookWorkspace notebookId="n1" />);
+    const [input] = await screen.findAllByPlaceholderText(/ask a question about your sources/i);
+    const user = userEvent.setup();
+    await user.type(input, 'What is this about?');
+    const [sendButton] = screen.getAllByRole('button', { name: 'Ask' });
+    await user.click(sendButton);
+
+    // Immediately, before the server responds: the sent message is visible, with the
+    // processing indicator under it.
+    const [userBubble] = await screen.findAllByTestId('chat-bubble-user');
+    expect(userBubble).toHaveTextContent('What is this about?');
+    expect(screen.getAllByTestId('asking-indicator').length).toBeGreaterThan(0);
+
+    resolvePost?.({ ok: true, json: () => Promise.resolve({ id: 'm-server' }) } as Response);
+
+    await waitFor(() => expect(screen.queryAllByTestId('asking-indicator')).toHaveLength(0));
+    expect(screen.getAllByTestId('chat-bubble-user')[0]).toHaveTextContent('What is this about?');
+    expect(screen.getAllByText('This is about cats.').length).toBeGreaterThan(0);
+  });
 });

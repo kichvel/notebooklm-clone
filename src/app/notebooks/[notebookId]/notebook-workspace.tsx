@@ -167,6 +167,19 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     if (asking) return;
     setAsking(true);
     setAskError(null);
+    const optimisticId = `pending-${crypto.randomUUID()}`;
+    setMessages((current) => [
+      ...current,
+      {
+        id: optimisticId,
+        role: 'user',
+        content: text,
+        status: 'complete',
+        created_at: new Date().toISOString(),
+        follow_up_questions: null,
+        citations: [],
+      },
+    ]);
     try {
       const response = await fetch(`/api/notebooks/${notebookId}/messages`, {
         method: 'POST',
@@ -177,6 +190,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
       setQuestion('');
       await refreshMessages();
     } catch {
+      setMessages((current) => current.filter((message) => message.id !== optimisticId));
       setAskError('Something went wrong asking that question. Please try again.');
     } finally {
       setAsking(false);
