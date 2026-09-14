@@ -60,6 +60,7 @@ export function ChatPanel({
   askError,
   hasProcessingSources,
   onSelectFollowUp,
+  sourceCount,
 }: {
   messages: Message[];
   question: string;
@@ -69,11 +70,15 @@ export function ChatPanel({
   askError: string | null;
   hasProcessingSources: boolean;
   onSelectFollowUp: (question: string) => void;
+  sourceCount: number;
 }) {
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex shrink-0 items-center border-b border-border px-4 py-3">
+        <h2 className="text-sm font-medium text-foreground">Chat</h2>
+      </div>
       <div className="flex-1 overflow-y-auto">
         {messages.length === 0 && !asking ? (
           <WelcomeState
@@ -127,19 +132,26 @@ export function ChatPanel({
         )}
       </div>
 
-      <form onSubmit={onAsk} className="flex items-center gap-2 border-t border-border p-4">
-        <Input
-          value={question}
-          onChange={(e) => onQuestionChange(e.target.value)}
-          placeholder="Ask a question about your sources"
-          disabled={asking}
-          required
-        />
-        <Button type="submit" size="icon" disabled={asking} aria-label="Ask">
-          {asking ? <Loader2Icon className="animate-spin" /> : <SendIcon />}
-        </Button>
-      </form>
-      {askError && <p className="px-4 pb-3 text-sm text-destructive">{askError}</p>}
+      <div className="shrink-0 border-t border-border">
+        <form onSubmit={onAsk} className="flex items-center gap-2 p-4">
+          <Input
+            value={question}
+            onChange={(e) => onQuestionChange(e.target.value)}
+            placeholder="Ask a question about your sources"
+            disabled={asking}
+            required
+          />
+          <div className="flex flex-col items-center gap-1">
+            <Button type="submit" size="icon" disabled={asking} aria-label="Ask">
+              {asking ? <Loader2Icon className="animate-spin" /> : <SendIcon />}
+            </Button>
+            <span className="text-xs whitespace-nowrap text-muted-foreground">
+              Sources: {sourceCount}
+            </span>
+          </div>
+        </form>
+        {askError && <p className="px-4 pb-3 text-sm text-destructive">{askError}</p>}
+      </div>
 
       <CitationDrawer
         citation={openCitation}

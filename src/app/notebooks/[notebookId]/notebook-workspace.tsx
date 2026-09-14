@@ -226,6 +226,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
       askError={askError}
       hasProcessingSources={hasProcessingSources}
       onSelectFollowUp={handleSelectFollowUp}
+      sourceCount={selectedSourceIds.size}
     />
   );
 

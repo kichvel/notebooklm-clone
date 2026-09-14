@@ -25,7 +25,12 @@ const messageWithCitation: Message = {
   ],
 };
 
-function renderPanel(messages: Message[] = [], onSelectFollowUp = vi.fn(), asking = false) {
+function renderPanel(
+  messages: Message[] = [],
+  onSelectFollowUp = vi.fn(),
+  asking = false,
+  sourceCount = 0,
+) {
   return render(
     <ChatPanel
       messages={messages}
@@ -36,6 +41,7 @@ function renderPanel(messages: Message[] = [], onSelectFollowUp = vi.fn(), askin
       askError={null}
       hasProcessingSources={false}
       onSelectFollowUp={onSelectFollowUp}
+      sourceCount={sourceCount}
     />,
   );
 }
@@ -102,5 +108,15 @@ describe('ChatPanel', () => {
   it('shows a processing indicator while a question is being answered', () => {
     renderPanel([messageWithCitation], vi.fn(), true);
     expect(screen.getByTestId('asking-indicator')).toBeInTheDocument();
+  });
+
+  it('shows a "Chat" header', () => {
+    renderPanel([]);
+    expect(screen.getByRole('heading', { name: 'Chat' })).toBeInTheDocument();
+  });
+
+  it('shows the current source count under the send button', () => {
+    renderPanel([], vi.fn(), false, 3);
+    expect(screen.getByText('Sources: 3')).toBeInTheDocument();
   });
 });
