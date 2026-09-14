@@ -73,4 +73,35 @@ describe('SourceList', () => {
     );
     expect(screen.getByText(/saved sources will appear here/i)).toBeInTheDocument();
   });
+
+  it('renders a distinct icon for each source type', () => {
+    const types: SourceSummary['type'][] = [
+      'pdf',
+      'docx',
+      'txt',
+      'audio',
+      'website',
+      'youtube',
+      'pasted_text',
+    ];
+    const mixed: SourceSummary[] = types.map((type, i) => ({
+      id: String(i),
+      title: `source-${type}`,
+      status: 'ready',
+      failure_reason: null,
+      type,
+      created_at: '',
+    }));
+    render(
+      <SourceList
+        sources={mixed}
+        selectedIds={new Set()}
+        onSelectionChange={vi.fn()}
+        onRetry={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+    const icons = types.map((type) => screen.getByTestId(`source-icon-${type}`).outerHTML);
+    expect(new Set(icons).size).toBe(icons.length);
+  });
 });
