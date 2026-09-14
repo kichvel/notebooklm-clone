@@ -79,7 +79,10 @@ export function ChatPanel({
         ) : (
           <ul className="flex flex-col gap-4 p-4">
             {messages.map((message) => (
-              <li key={message.id} className={message.role === 'user' ? 'self-end' : 'self-start'}>
+              <li
+                key={message.id}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
                 {message.role === 'assistant' ? (
                   <AnswerText
                     content={message.content}
