@@ -25,14 +25,14 @@ const messageWithCitation: Message = {
   ],
 };
 
-function renderPanel(messages: Message[] = [], onSelectFollowUp = vi.fn()) {
+function renderPanel(messages: Message[] = [], onSelectFollowUp = vi.fn(), asking = false) {
   return render(
     <ChatPanel
       messages={messages}
       question=""
       onQuestionChange={vi.fn()}
       onAsk={vi.fn()}
-      asking={false}
+      asking={asking}
       askError={null}
       hasProcessingSources={false}
       onSelectFollowUp={onSelectFollowUp}
@@ -79,5 +79,28 @@ describe('ChatPanel', () => {
     );
     await user.click(screen.getByRole('button', { name: 'What do cats eat?' }));
     expect(onSelectFollowUp).toHaveBeenCalledWith('What do cats eat?');
+  });
+
+  it('disables the input, send button, and follow-up chips while a question is processing', async () => {
+    const user = userEvent.setup();
+    const onSelectFollowUp = vi.fn();
+    renderPanel(
+      [{ ...messageWithCitation, follow_up_questions: ['What do cats eat?'] }],
+      onSelectFollowUp,
+      true,
+    );
+
+    expect(screen.getByPlaceholderText(/ask a question about your sources/i)).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Ask' })).toBeDisabled();
+
+    const chip = screen.getByRole('button', { name: 'What do cats eat?' });
+    expect(chip).toBeDisabled();
+    await user.click(chip);
+    expect(onSelectFollowUp).not.toHaveBeenCalled();
+  });
+
+  it('shows a processing indicator while a question is being answered', () => {
+    renderPanel([messageWithCitation], vi.fn(), true);
+    expect(screen.getByTestId('asking-indicator')).toBeInTheDocument();
   });
 });

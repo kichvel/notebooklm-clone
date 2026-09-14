@@ -164,6 +164,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
   }
 
   async function submitQuestion(text: string) {
+    if (asking) return;
     setAsking(true);
     setAskError(null);
     try {

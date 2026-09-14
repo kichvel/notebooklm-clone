@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { SendIcon } from 'lucide-react';
+import { Loader2Icon, SendIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { WelcomeState } from './welcome-state';
@@ -75,7 +75,7 @@ export function ChatPanel({
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto">
-        {messages.length === 0 ? (
+        {messages.length === 0 && !asking ? (
           <WelcomeState
             hasProcessingSources={hasProcessingSources}
             onSelectQuestion={onQuestionChange}
@@ -98,6 +98,7 @@ export function ChatPanel({
                       <FollowUpChips
                         questions={message.follow_up_questions}
                         onSelect={onSelectFollowUp}
+                        disabled={asking}
                       />
                     )}
                   </div>
@@ -111,6 +112,17 @@ export function ChatPanel({
                 )}
               </li>
             ))}
+            {asking && (
+              <li className="flex justify-start" aria-live="polite">
+                <div
+                  data-testid="asking-indicator"
+                  className="flex items-center gap-2 text-sm text-muted-foreground"
+                >
+                  <Loader2Icon className="size-4 animate-spin" aria-hidden />
+                  <span>Thinking…</span>
+                </div>
+              </li>
+            )}
           </ul>
         )}
       </div>
@@ -120,10 +132,11 @@ export function ChatPanel({
           value={question}
           onChange={(e) => onQuestionChange(e.target.value)}
           placeholder="Ask a question about your sources"
+          disabled={asking}
           required
         />
         <Button type="submit" size="icon" disabled={asking} aria-label="Ask">
-          <SendIcon />
+          {asking ? <Loader2Icon className="animate-spin" /> : <SendIcon />}
         </Button>
       </form>
       {askError && <p className="px-4 pb-3 text-sm text-destructive">{askError}</p>}
