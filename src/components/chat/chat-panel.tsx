@@ -73,13 +73,11 @@ export function ChatPanel({
   sourceCount: number;
 }) {
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
-  const askingIndicatorRef = useRef<HTMLLIElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (asking) {
-      askingIndicatorRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' });
-    }
-  }, [asking]);
+    bottomRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' });
+  }, [messages, asking]);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -125,7 +123,7 @@ export function ChatPanel({
               </li>
             ))}
             {asking && (
-              <li ref={askingIndicatorRef} className="flex justify-start" aria-live="polite">
+              <li className="flex justify-start" aria-live="polite">
                 <div
                   data-testid="asking-indicator"
                   className="flex items-center gap-2 text-sm text-muted-foreground"
@@ -137,6 +135,7 @@ export function ChatPanel({
             )}
           </ul>
         )}
+        <div ref={bottomRef} />
       </div>
 
       <div className="shrink-0 border-t border-border">

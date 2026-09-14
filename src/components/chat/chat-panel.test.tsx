@@ -110,13 +110,17 @@ describe('ChatPanel', () => {
     expect(screen.getByTestId('asking-indicator')).toBeInTheDocument();
   });
 
-  it('scrolls the processing indicator into view when it appears', () => {
+  it('scrolls to the bottom when the processing indicator appears and again when the answer arrives', () => {
     const scrollIntoViewMock = vi.fn();
     HTMLElement.prototype.scrollIntoView = scrollIntoViewMock;
 
     const { rerender } = renderPanel([messageWithCitation], vi.fn(), false);
-    expect(scrollIntoViewMock).not.toHaveBeenCalled();
+    expect(scrollIntoViewMock).toHaveBeenCalledWith(
+      expect.objectContaining({ behavior: 'smooth', block: 'end' }),
+    );
+    const callsAfterMount = scrollIntoViewMock.mock.calls.length;
 
+    // Chip clicked / question sent: asking flips true, a "Thinking…" indicator appears.
     rerender(
       <ChatPanel
         messages={[messageWithCitation]}
@@ -130,10 +134,29 @@ describe('ChatPanel', () => {
         sourceCount={0}
       />,
     );
+    expect(scrollIntoViewMock.mock.calls.length).toBeGreaterThan(callsAfterMount);
+    const callsBeforeAnswer = scrollIntoViewMock.mock.calls.length;
 
-    expect(scrollIntoViewMock).toHaveBeenCalledWith(
-      expect.objectContaining({ behavior: 'smooth', block: 'end' }),
+    // Answer arrives: asking flips false, a new message is appended.
+    const secondMessage: Message = {
+      ...messageWithCitation,
+      id: 'm2',
+      content: 'Dogs are mammals too.',
+    };
+    rerender(
+      <ChatPanel
+        messages={[messageWithCitation, secondMessage]}
+        question=""
+        onQuestionChange={vi.fn()}
+        onAsk={vi.fn()}
+        asking={false}
+        askError={null}
+        hasProcessingSources={false}
+        onSelectFollowUp={vi.fn()}
+        sourceCount={0}
+      />,
     );
+    expect(scrollIntoViewMock.mock.calls.length).toBeGreaterThan(callsBeforeAnswer);
 
     // @ts-expect-error -- jsdom doesn't implement scrollIntoView; remove the test stub
     delete HTMLElement.prototype.scrollIntoView;
