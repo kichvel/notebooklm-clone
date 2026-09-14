@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { askQuestion } from '@/lib/generation';
+import { streamAnswer } from '@/lib/generation';
 import { resolveCitations } from '@/lib/citations';
 
 export async function POST(
@@ -26,7 +26,11 @@ export async function POST(
     return NextResponse.json({ error: 'sourceIds must be an array of strings' }, { status: 400 });
   }
 
-  const result = await askQuestion(supabase, { notebookId, question, sourceIds });
+  // TODO(Task 4): stream these events to the client as NDJSON instead of collecting them here.
+  let result;
+  for await (const event of streamAnswer(supabase, { notebookId, question, sourceIds })) {
+    if (event.type === 'done') result = event.result;
+  }
   return NextResponse.json(result, { status: 201 });
 }
 
