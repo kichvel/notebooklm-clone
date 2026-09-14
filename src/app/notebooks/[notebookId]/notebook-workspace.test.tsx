@@ -11,6 +11,17 @@ function jsonResponse(body: unknown) {
   return Promise.resolve({ ok: true, json: () => Promise.resolve(body) } as Response);
 }
 
+function streamResponse(lines: unknown[] = []) {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const line of lines) controller.enqueue(encoder.encode(JSON.stringify(line) + '\n'));
+      controller.close();
+    },
+  });
+  return Promise.resolve({ ok: true, body } as unknown as Response);
+}
+
 describe('NotebookWorkspace', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -77,7 +88,7 @@ describe('NotebookWorkspace', () => {
     ).length;
     expect(postCallsAfterSecondClick).toBe(postCallsBeforeSecondClick);
 
-    resolvePost?.({ ok: true, json: () => Promise.resolve({ id: 'm1' }) } as Response);
+    resolvePost?.(await streamResponse([]));
   });
 
   it('shows the sent message immediately with a processing indicator, then swaps in the persisted answer', async () => {
@@ -102,6 +113,7 @@ describe('NotebookWorkspace', () => {
             status: 'complete',
             created_at: '',
             follow_up_questions: null,
+            reasoning: null,
             citations: [],
           },
           {
@@ -111,6 +123,7 @@ describe('NotebookWorkspace', () => {
             status: 'complete',
             created_at: '',
             follow_up_questions: ['What do cats eat?'],
+            reasoning: null,
             citations: [],
           },
         ]);
@@ -132,7 +145,7 @@ describe('NotebookWorkspace', () => {
     expect(userBubble).toHaveTextContent('What is this about?');
     expect(screen.getAllByTestId('asking-indicator').length).toBeGreaterThan(0);
 
-    resolvePost?.({ ok: true, json: () => Promise.resolve({ id: 'm-server' }) } as Response);
+    resolvePost?.(await streamResponse([{ type: 'answer_delta', text: 'This is about cats.' }]));
 
     await waitFor(() => expect(screen.queryAllByTestId('asking-indicator')).toHaveLength(0));
     expect(screen.getAllByTestId('chat-bubble-user')[0]).toHaveTextContent('What is this about?');

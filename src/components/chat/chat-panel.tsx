@@ -8,6 +8,7 @@ import { WelcomeState } from './welcome-state';
 import { CitationDrawer, type Citation } from './citation-drawer';
 import { FollowUpChips } from './follow-up-chips';
 import { ConfigureChatDialog } from './configure-chat-dialog';
+import { ThoughtsPanel } from './thoughts-panel';
 import type { ChatSettings } from '@/lib/notebooks/chatSettings';
 
 export interface Message {
@@ -18,6 +19,7 @@ export interface Message {
   created_at: string;
   follow_up_questions: string[] | null;
   citations: Citation[];
+  reasoning: string | null;
 }
 
 function AnswerText({
@@ -65,6 +67,7 @@ export function ChatPanel({
   sourceCount,
   chatSettings,
   onUpdateChatSettings,
+  streaming,
 }: {
   messages: Message[];
   question: string;
@@ -77,6 +80,7 @@ export function ChatPanel({
   sourceCount: number;
   chatSettings: ChatSettings;
   onUpdateChatSettings: (settings: ChatSettings) => Promise<void>;
+  streaming: { reasoning: string; answer: string; citations: Citation[] } | null;
 }) {
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -106,6 +110,9 @@ export function ChatPanel({
               >
                 {message.role === 'assistant' ? (
                   <div>
+                    {message.reasoning && (
+                      <ThoughtsPanel text={message.reasoning} streaming={false} />
+                    )}
                     <AnswerText
                       content={message.content}
                       citations={message.citations}
@@ -133,10 +140,23 @@ export function ChatPanel({
               <li className="flex justify-start" aria-live="polite">
                 <div
                   data-testid="asking-indicator"
-                  className="flex items-center gap-2 text-sm text-muted-foreground"
+                  className="flex flex-col gap-2 text-sm text-muted-foreground"
                 >
-                  <Loader2Icon className="size-4 animate-spin" aria-hidden />
-                  <span>Thinking…</span>
+                  {streaming?.reasoning && (
+                    <ThoughtsPanel text={streaming.reasoning} streaming />
+                  )}
+                  {streaming?.answer ? (
+                    <AnswerText
+                      content={streaming.answer}
+                      citations={streaming.citations}
+                      onOpenCitation={setOpenCitation}
+                    />
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Loader2Icon className="size-4 animate-spin" aria-hidden />
+                      <span>Thinking…</span>
+                    </div>
+                  )}
                 </div>
               </li>
             )}

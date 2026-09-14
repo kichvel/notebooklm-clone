@@ -7,8 +7,10 @@ import { SourceList } from '@/components/sources/source-list';
 import { AddSourceDialog } from '@/components/sources/add-source-dialog';
 import type { SourceSummary as Source } from '@/components/sources/source-item';
 import { ChatPanel, type Message } from '@/components/chat/chat-panel';
+import type { Citation } from '@/components/chat/citation-drawer';
 import { StudioPanel } from '@/components/studio/studio-panel';
 import type { ChatSettings } from '@/lib/notebooks/chatSettings';
+import type { AskQuestionEvent } from '@/lib/generation';
 
 const ACTIVE_STATUSES = new Set(['uploaded', 'processing']);
 
@@ -23,6 +25,11 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
   const [question, setQuestion] = useState('');
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
+  const [streaming, setStreaming] = useState<{
+    reasoning: string;
+    answer: string;
+    citations: Citation[];
+  } | null>(null);
   const [chatSettings, setChatSettings] = useState<ChatSettings>({
     chatStyle: 'default',
     chatCustomStyle: null,
@@ -188,6 +195,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     if (asking) return;
     setAsking(true);
     setAskError(null);
+    setStreaming({ reasoning: '', answer: '', citations: [] });
     const optimisticId = `pending-${crypto.randomUUID()}`;
     setMessages((current) => [
       ...current,
@@ -198,16 +206,48 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
         status: 'complete',
         created_at: new Date().toISOString(),
         follow_up_questions: null,
+        reasoning: null,
         citations: [],
       },
     ]);
+    let sawError = false;
     try {
       const response = await fetch(`/api/notebooks/${notebookId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: text, sourceIds: [...selectedSourceIds] }),
       });
-      if (!response.ok) throw new Error('Failed to ask question');
+      if (!response.ok || !response.body) throw new Error('Failed to ask question');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIndex;
+        while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, newlineIndex);
+          buffer = buffer.slice(newlineIndex + 1);
+          if (!line.trim()) continue;
+          const event = JSON.parse(line) as AskQuestionEvent;
+          if (event.type === 'passages') {
+            setStreaming((current) => current && { ...current, citations: event.citations });
+          } else if (event.type === 'reasoning_delta') {
+            setStreaming(
+              (current) => current && { ...current, reasoning: current.reasoning + event.text },
+            );
+          } else if (event.type === 'answer_delta') {
+            setStreaming(
+              (current) => current && { ...current, answer: current.answer + event.text },
+            );
+          } else if (event.type === 'error') {
+            sawError = true;
+          }
+        }
+      }
+      if (sawError) throw new Error('Failed to generate an answer');
       setQuestion('');
       await refreshMessages();
     } catch {
@@ -215,6 +255,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
       setAskError('Something went wrong asking that question. Please try again.');
     } finally {
       setAsking(false);
+      setStreaming(null);
     }
   }
 
@@ -264,6 +305,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
       sourceCount={selectedSourceIds.size}
       chatSettings={chatSettings}
       onUpdateChatSettings={handleUpdateChatSettings}
+      streaming={streaming}
     />
   );
 

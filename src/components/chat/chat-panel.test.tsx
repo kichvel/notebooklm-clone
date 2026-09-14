@@ -10,6 +10,7 @@ const messageWithCitation: Message = {
   status: 'complete',
   created_at: '',
   follow_up_questions: null,
+  reasoning: null,
   citations: [
     {
       label: 1,
@@ -36,6 +37,7 @@ function renderPanel(
   onSelectFollowUp = vi.fn(),
   asking = false,
   sourceCount = 0,
+  streaming: { reasoning: string; answer: string; citations: Message['citations'] } | null = null,
 ) {
   return render(
     <ChatPanel
@@ -50,6 +52,7 @@ function renderPanel(
       sourceCount={sourceCount}
       chatSettings={defaultChatSettings}
       onUpdateChatSettings={vi.fn()}
+      streaming={streaming}
     />,
   );
 }
@@ -77,6 +80,7 @@ describe('ChatPanel', () => {
         status: 'complete',
         created_at: '',
         follow_up_questions: null,
+        reasoning: null,
         citations: [],
       },
       messageWithCitation,
@@ -142,6 +146,7 @@ describe('ChatPanel', () => {
         sourceCount={0}
         chatSettings={defaultChatSettings}
         onUpdateChatSettings={vi.fn()}
+        streaming={null}
       />,
     );
     expect(scrollIntoViewMock.mock.calls.length).toBeGreaterThan(callsAfterMount);
@@ -166,6 +171,7 @@ describe('ChatPanel', () => {
         sourceCount={0}
         chatSettings={defaultChatSettings}
         onUpdateChatSettings={vi.fn()}
+        streaming={null}
       />,
     );
     expect(scrollIntoViewMock.mock.calls.length).toBeGreaterThan(callsBeforeAnswer);
@@ -189,5 +195,22 @@ describe('ChatPanel', () => {
     renderPanel([]);
     await user.click(screen.getByRole('button', { name: /configure chat/i }));
     expect(screen.getByRole('heading', { name: 'Configure Chat' })).toBeInTheDocument();
+  });
+
+  it('shows a Thoughts panel for a historical message with reasoning', () => {
+    renderPanel([{ ...messageWithCitation, reasoning: 'Checking the passages.' }]);
+    expect(screen.getByText('Thoughts')).toBeInTheDocument();
+  });
+
+  it('shows the live Thoughts panel and partial answer while streaming, instead of "Thinking…"', () => {
+    renderPanel([], vi.fn(), true, 0, {
+      reasoning: 'Looking at source 2.',
+      answer: 'Cats are mammals.',
+      citations: [],
+    });
+    expect(screen.getByText('Thoughts')).toBeInTheDocument();
+    expect(screen.getByText(/looking at source 2/i)).toBeVisible();
+    expect(screen.getByText('Cats are mammals.')).toBeInTheDocument();
+    expect(screen.queryByText('Thinking…')).not.toBeInTheDocument();
   });
 });
