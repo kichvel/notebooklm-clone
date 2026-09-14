@@ -88,11 +88,12 @@ describe.skipIf(!hasRealEnv)('maybeGenerateNotebookIntro', () => {
 
     const { data: messages } = await user
       .from('messages')
-      .select('role, status')
+      .select('role, status, follow_up_questions')
       .eq('notebook_id', notebook.id);
     expect(messages).toHaveLength(1);
     expect(messages![0].role).toBe('assistant');
     expect(messages![0].status).toBe('complete');
+    expect(messages![0].follow_up_questions).toHaveLength(3);
 
     await maybeGenerateNotebookIntro(user, notebook.id);
     const { data: messagesAfterSecondCall } = await user

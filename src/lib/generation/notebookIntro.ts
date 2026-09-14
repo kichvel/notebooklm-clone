@@ -1,6 +1,7 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { CAPABLE_GENERATION_MODEL, generate } from '@/lib/providers/openai';
+import { followUpPromptInstruction, parseFollowUps } from './followUps';
 
 const MAX_CHUNKS_PER_SOURCE = 3;
 const MAX_SAMPLE_CHARS = 6000;
@@ -52,8 +53,10 @@ export async function maybeGenerateNotebookIntro(
     ).trim();
     summary = (
       await generate({
-        system:
-          'You write a short 2-4 sentence introduction summarizing what a set of notebook sources cover, based only on the passages given. Do not add information beyond what the passages show. Respond with only the summary.',
+        system: [
+          'You write a short 2-4 sentence introduction summarizing what a set of notebook sources cover, based only on the passages given. Do not add information beyond what the passages show. Respond with only the summary, then the follow-up section.',
+          followUpPromptInstruction(),
+        ].join('\n'),
         prompt: sample,
         model: CAPABLE_GENERATION_MODEL,
       })
@@ -61,7 +64,8 @@ export async function maybeGenerateNotebookIntro(
   } catch {
     return;
   }
-  if (!title || !summary) return;
+  const { text: introText, followUpQuestions } = parseFollowUps(summary);
+  if (!title || !introText) return;
 
   const { data: claimed } = await supabase
     .from('notebooks')
@@ -74,7 +78,8 @@ export async function maybeGenerateNotebookIntro(
   await supabase.from('messages').insert({
     notebook_id: notebookId,
     role: 'assistant',
-    content: summary,
+    content: introText,
     status: 'complete',
+    follow_up_questions: followUpQuestions,
   });
 }
