@@ -1,7 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { FileTextIcon, RotateCcwIcon, Trash2Icon } from 'lucide-react';
+import {
+  ClipboardIcon,
+  FileAudio2Icon,
+  FileIcon,
+  FileTextIcon,
+  FileType2Icon,
+  LinkIcon,
+  RotateCcwIcon,
+  Trash2Icon,
+  VideoIcon,
+} from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -29,6 +39,23 @@ function StatusBadge({ status }: { status: SourceSummary['status'] }) {
   return <Badge variant="outline">Processing…</Badge>;
 }
 
+const SOURCE_TYPE_ICONS: Record<string, typeof FileIcon> = {
+  pdf: FileTextIcon,
+  docx: FileType2Icon,
+  txt: FileIcon,
+  audio: FileAudio2Icon,
+  website: LinkIcon,
+  youtube: VideoIcon,
+  pasted_text: ClipboardIcon,
+};
+
+function SourceTypeIcon({ type }: { type: string }) {
+  const Icon = SOURCE_TYPE_ICONS[type] ?? FileIcon;
+  return (
+    <Icon data-testid={`source-icon-${type}`} className="size-4 shrink-0 text-muted-foreground" />
+  );
+}
+
 export function SourceItem({
   source,
   selected,
@@ -53,7 +80,7 @@ export function SourceItem({
         disabled={!selectable}
         aria-label={`Select ${source.title}`}
       />
-      <FileTextIcon className="size-4 shrink-0 text-muted-foreground" />
+      <SourceTypeIcon type={source.type} />
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-sm">{source.title}</span>
         {source.status === 'failed' && source.failure_reason && (

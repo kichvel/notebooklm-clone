@@ -79,10 +79,7 @@ export function ChatPanel({
         ) : (
           <ul className="flex flex-col gap-4 p-4">
             {messages.map((message) => (
-              <li
-                key={message.id}
-                className={message.role === 'user' ? 'self-end font-medium' : 'self-start'}
-              >
+              <li key={message.id} className={message.role === 'user' ? 'self-end' : 'self-start'}>
                 {message.role === 'assistant' ? (
                   <AnswerText
                     content={message.content}
@@ -90,7 +87,12 @@ export function ChatPanel({
                     onOpenCitation={setOpenCitation}
                   />
                 ) : (
-                  <p className="text-sm">{message.content}</p>
+                  <p
+                    data-testid="chat-bubble-user"
+                    className="max-w-[80%] rounded-2xl bg-secondary px-4 py-2 text-sm whitespace-pre-wrap text-secondary-foreground"
+                  >
+                    {message.content}
+                  </p>
                 )}
               </li>
             ))}

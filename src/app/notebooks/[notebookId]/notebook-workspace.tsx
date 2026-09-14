@@ -183,25 +183,26 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     }
   }
 
-  const sourcesPanel = (
-    <div className="flex flex-col gap-2">
-      <div className="px-3 pt-3">
-        <AddSourceDialog
-          onAddFiles={handleAddFiles}
-          onAddWebsite={handleAddWebsite}
-          onAddYoutube={handleAddYoutube}
-          onAddText={handleAddText}
-        />
-        {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
-      </div>
-      <SourceList
-        sources={sources}
-        selectedIds={selectedSourceIds}
-        onSelectionChange={setSelectedSourceIds}
-        onRetry={handleRetry}
-        onDelete={handleDeleteSource}
+  const sourcesHeaderAction = (
+    <>
+      <AddSourceDialog
+        onAddFiles={handleAddFiles}
+        onAddWebsite={handleAddWebsite}
+        onAddYoutube={handleAddYoutube}
+        onAddText={handleAddText}
       />
-    </div>
+      {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
+    </>
+  );
+
+  const sourcesPanel = (
+    <SourceList
+      sources={sources}
+      selectedIds={selectedSourceIds}
+      onSelectionChange={setSelectedSourceIds}
+      onRetry={handleRetry}
+      onDelete={handleDeleteSource}
+    />
   );
 
   const hasProcessingSources = sources.some((s) => ACTIVE_STATUSES.has(s.status));
@@ -224,7 +225,12 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <WorkspaceHeader notebookId={notebookId} title={notebookTitle} onRenamed={setNotebookTitle} />
-      <WorkspaceShell sources={sourcesPanel} chat={chatPanel} studio={studioPanel} />
+      <WorkspaceShell
+        sources={sourcesPanel}
+        sourcesHeaderAction={sourcesHeaderAction}
+        chat={chatPanel}
+        studio={studioPanel}
+      />
     </div>
   );
 }

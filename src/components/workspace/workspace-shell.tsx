@@ -13,11 +13,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface WorkspaceShellProps {
   sources: React.ReactNode;
+  sourcesHeaderAction: React.ReactNode;
   chat: React.ReactNode;
   studio: React.ReactNode;
 }
 
-export function WorkspaceShell({ sources, chat, studio }: WorkspaceShellProps) {
+export function WorkspaceShell({ sources, sourcesHeaderAction, chat, studio }: WorkspaceShellProps) {
   const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
   const [studioCollapsed, setStudioCollapsed] = useState(false);
 
@@ -29,10 +30,15 @@ export function WorkspaceShell({ sources, chat, studio }: WorkspaceShellProps) {
           sourcesCollapsed ? 'lg:w-12' : 'lg:w-80',
         )}
       >
-        <div className="flex shrink-0 items-center justify-end border-b border-border p-2">
+        <div
+          data-testid="sources-panel-header"
+          className="flex shrink-0 items-center gap-2 border-b border-border p-2"
+        >
+          {!sourcesCollapsed && <div className="min-w-0 flex-1">{sourcesHeaderAction}</div>}
           <Button
             variant="ghost"
             size="icon-sm"
+            className="shrink-0"
             aria-label={sourcesCollapsed ? 'Expand sources panel' : 'Collapse sources panel'}
             onClick={() => setSourcesCollapsed((collapsed) => !collapsed)}
           >
@@ -63,12 +69,17 @@ export function WorkspaceShell({ sources, chat, studio }: WorkspaceShellProps) {
         {!studioCollapsed && studio}
       </div>
 
-      <MobileTabs sources={sources} chat={chat} studio={studio} />
+      <MobileTabs
+        sources={sources}
+        sourcesHeaderAction={sourcesHeaderAction}
+        chat={chat}
+        studio={studio}
+      />
     </div>
   );
 }
 
-function MobileTabs({ sources, chat, studio }: WorkspaceShellProps) {
+function MobileTabs({ sources, sourcesHeaderAction, chat, studio }: WorkspaceShellProps) {
   return (
     <Tabs defaultValue="chat" className="flex flex-1 flex-col overflow-hidden lg:hidden">
       <TabsList className="mx-4 mt-3">
@@ -77,6 +88,7 @@ function MobileTabs({ sources, chat, studio }: WorkspaceShellProps) {
         <TabsTrigger value="studio">Studio</TabsTrigger>
       </TabsList>
       <TabsContent value="sources" className="flex-1 overflow-y-auto">
+        <div className="px-3 pt-3">{sourcesHeaderAction}</div>
         {sources}
       </TabsContent>
       <TabsContent value="chat" className="flex-1 overflow-y-auto">
