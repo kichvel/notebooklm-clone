@@ -9,6 +9,7 @@ const messageWithCitation: Message = {
   content: 'Cats are mammals [1].',
   status: 'complete',
   created_at: '',
+  follow_up_questions: null,
   citations: [
     {
       label: 1,
@@ -24,7 +25,7 @@ const messageWithCitation: Message = {
   ],
 };
 
-function renderPanel(messages: Message[] = []) {
+function renderPanel(messages: Message[] = [], onSelectFollowUp = vi.fn()) {
   return render(
     <ChatPanel
       messages={messages}
@@ -34,6 +35,7 @@ function renderPanel(messages: Message[] = []) {
       asking={false}
       askError={null}
       hasProcessingSources={false}
+      onSelectFollowUp={onSelectFollowUp}
     />,
   );
 }
@@ -60,10 +62,22 @@ describe('ChatPanel', () => {
         content: 'Hello there',
         status: 'complete',
         created_at: '',
+        follow_up_questions: null,
         citations: [],
       },
       messageWithCitation,
     ]);
     expect(screen.getByTestId('chat-bubble-user')).toHaveTextContent('Hello there');
+  });
+
+  it('sends a follow-up question immediately when a chip is clicked', async () => {
+    const user = userEvent.setup();
+    const onSelectFollowUp = vi.fn();
+    renderPanel(
+      [{ ...messageWithCitation, follow_up_questions: ['What do cats eat?'] }],
+      onSelectFollowUp,
+    );
+    await user.click(screen.getByRole('button', { name: 'What do cats eat?' }));
+    expect(onSelectFollowUp).toHaveBeenCalledWith('What do cats eat?');
   });
 });
