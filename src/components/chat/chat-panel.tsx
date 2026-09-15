@@ -70,6 +70,7 @@ export function ChatPanel({
   streaming,
   retryingMessageId,
   onRetry,
+  pendingIntroTitles,
 }: {
   messages: Message[];
   question: string;
@@ -85,9 +86,11 @@ export function ChatPanel({
   streaming: { reasoning: string; answer: string; citations: Citation[] } | null;
   retryingMessageId: string | null;
   onRetry: (messageId: string) => void;
+  pendingIntroTitles: string[];
 }) {
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const hasPendingIntro = pendingIntroTitles.length > 0;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' });
@@ -204,6 +207,23 @@ export function ChatPanel({
                 </div>
               </li>
             )}
+            {hasPendingIntro && (
+              <li className="flex justify-start" aria-live="polite">
+                <div
+                  data-testid="intro-pending-indicator"
+                  className="flex items-center gap-2 text-sm text-muted-foreground"
+                >
+                  <Loader2Icon className="size-4 animate-spin" aria-hidden />
+                  <span>
+                    Summarizing{' '}
+                    {pendingIntroTitles.length === 1
+                      ? pendingIntroTitles[0]
+                      : `${pendingIntroTitles.length} new sources`}
+                    …
+                  </span>
+                </div>
+              </li>
+            )}
           </ul>
         )}
         <div ref={bottomRef} />
@@ -215,12 +235,12 @@ export function ChatPanel({
             value={question}
             onChange={(e) => onQuestionChange(e.target.value)}
             placeholder="Ask a question about your sources"
-            disabled={asking}
+            disabled={asking || hasPendingIntro}
             required
           />
           <div className="flex flex-col items-center gap-1">
-            <Button type="submit" size="icon" disabled={asking} aria-label="Ask">
-              {asking ? <Loader2Icon className="animate-spin" /> : <SendIcon />}
+            <Button type="submit" size="icon" disabled={asking || hasPendingIntro} aria-label="Ask">
+              {asking || hasPendingIntro ? <Loader2Icon className="animate-spin" /> : <SendIcon />}
             </Button>
             <span className="text-xs whitespace-nowrap text-muted-foreground">
               Sources: {sourceCount}

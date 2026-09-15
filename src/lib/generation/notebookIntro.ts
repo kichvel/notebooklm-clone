@@ -1,12 +1,11 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { CAPABLE_GENERATION_MODEL, generate } from '@/lib/providers/openai';
-import { generateFollowUps } from './followUps';
+import { generate } from '@/lib/providers/openai';
 
 const MAX_CHUNKS_PER_SOURCE = 3;
 const MAX_SAMPLE_CHARS = 6000;
 
-export async function maybeGenerateNotebookIntro(
+export async function maybeGenerateNotebookTitle(
   supabase: SupabaseClient,
   notebookId: string,
 ): Promise<void> {
@@ -42,7 +41,6 @@ export async function maybeGenerateNotebookIntro(
   if (!sample.trim()) return;
 
   let title: string;
-  let summary: string;
   try {
     title = (
       await generate({
@@ -51,34 +49,14 @@ export async function maybeGenerateNotebookIntro(
         prompt: sample,
       })
     ).trim();
-    summary = (
-      await generate({
-        system:
-          'You write a short 2-4 sentence introduction summarizing what a set of notebook sources cover, based only on the passages given. Do not add information beyond what the passages show. Respond with only the summary.',
-        prompt: sample,
-        model: CAPABLE_GENERATION_MODEL,
-      })
-    ).trim();
   } catch {
     return;
   }
-  const introText = summary;
-  if (!title || !introText) return;
-  const followUpQuestions = await generateFollowUps({ answer: introText, passages: sample });
+  if (!title) return;
 
-  const { data: claimed } = await supabase
+  await supabase
     .from('notebooks')
     .update({ title, intro_generated_at: new Date().toISOString() })
     .eq('id', notebookId)
-    .is('intro_generated_at', null)
-    .select('id');
-  if (!claimed || claimed.length === 0) return;
-
-  await supabase.from('messages').insert({
-    notebook_id: notebookId,
-    role: 'assistant',
-    content: introText,
-    status: 'complete',
-    follow_up_questions: followUpQuestions,
-  });
+    .is('intro_generated_at', null);
 }

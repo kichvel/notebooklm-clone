@@ -3,7 +3,8 @@ import { NonRetriableError } from 'inngest';
 import { inngest } from '@/lib/inngest/client';
 import { createServiceClient } from '@/lib/supabase/server';
 import { embed, generate } from '@/lib/providers/openai';
-import { maybeGenerateNotebookIntro } from '@/lib/generation/notebookIntro';
+import { maybeGenerateNotebookTitle } from '@/lib/generation/notebookIntro';
+import { maybeGenerateSourceIntro } from '@/lib/generation/sourceIntro';
 import { getAdapter } from './adapters';
 import type { SourceBlock } from './adapters/types';
 
@@ -126,13 +127,13 @@ export const ingestSource = inngest.createFunction(
       await step.run('mark-failed', () =>
         markSourceIngestionFailed(supabase, sourceId, error.message || 'Ingestion failed'),
       );
-      await step.run('notebook-intro', async () => {
+      await step.run('notebook-title', async () => {
         const { data: source } = await supabase
           .from('sources')
           .select('notebook_id')
           .eq('id', sourceId)
           .single();
-        if (source) await maybeGenerateNotebookIntro(supabase, source.notebook_id);
+        if (source) await maybeGenerateNotebookTitle(supabase, source.notebook_id);
       });
     },
   },
@@ -247,13 +248,17 @@ export const ingestSource = inngest.createFunction(
       await upsertProcessingStep(supabase, sourceId, 'finalize', 'succeeded');
     });
 
-    await step.run('notebook-intro', async () => {
+    await step.run('notebook-title', async () => {
       const { data: source } = await supabase
         .from('sources')
         .select('notebook_id')
         .eq('id', sourceId)
         .single();
-      if (source) await maybeGenerateNotebookIntro(supabase, source.notebook_id);
+      if (source) await maybeGenerateNotebookTitle(supabase, source.notebook_id);
+    });
+
+    await step.run('source-intro', async () => {
+      await maybeGenerateSourceIntro(supabase, sourceId);
     });
 
     return { sourceId, chunkCount: chunks.length };

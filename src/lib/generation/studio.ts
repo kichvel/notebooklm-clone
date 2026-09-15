@@ -13,7 +13,8 @@ const STUDIO_QUERY_TEXT =
 const RETRIEVAL_POOL_SIZE = 30;
 
 export type PassageResult =
-  { status: 'ok'; content: string; citation: StudioCitation } | { status: 'exhausted' };
+  | { status: 'ok'; content: string; citation: StudioCitation; sourceSummary: string | null }
+  | { status: 'exhausted' };
 
 export async function selectNextPassage(
   supabase: SupabaseClient,
@@ -36,7 +37,7 @@ export async function selectNextPassage(
 
   const { data: source, error } = await supabase
     .from('sources')
-    .select('id, title, type, origin_url')
+    .select('id, title, type, origin_url, intro_summary')
     .eq('id', passage.sourceId)
     .single();
   if (error) throw error;
@@ -49,6 +50,7 @@ export async function selectNextPassage(
   return {
     status: 'ok',
     content: passage.content,
+    sourceSummary: source.intro_summary ?? null,
     citation: {
       label: 1,
       sourceId: passage.sourceId,
@@ -79,8 +81,15 @@ export async function generateNextFlashcards(
   if (picked.status === 'exhausted') return picked;
   const cards = await generateFlashcards({
     system:
-      'Create two distinct study flashcards grounded ONLY in the passage below, each testing a different fact or concept from it. "front" is a question or prompt; "back" is the answer. Never use knowledge outside the passage.',
-    prompt: `Passage:\n${picked.content}`,
+      'Create two distinct study flashcards grounded ONLY in the passage below, each testing a different fact or concept from it. "front" is a question or prompt; "back" is the answer. Never use knowledge outside the passage. A document summary may be given only so you understand what the whole document covers — never cite it, quote it, or treat it as a source of facts; every flashcard must be answerable from the passage alone.',
+    prompt: [
+      picked.sourceSummary
+        ? `Document summary (context only, not a source):\n${picked.sourceSummary}`
+        : null,
+      `Passage:\n${picked.content}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
   });
   if (!cards) return { status: 'exhausted' };
   return { status: 'ok', items: cards.map((card) => ({ card, citation: picked.citation })) };
@@ -106,8 +115,15 @@ export async function generateNextQuizQuestions(
   if (picked.status === 'exhausted') return picked;
   const questions = await generateQuizQuestions({
     system:
-      'Create two distinct multiple-choice questions, each with exactly 4 options, grounded ONLY in the passage below and testing different facts or concepts from it. Exactly one option per question is correct; the rest must be plausible but clearly wrong given the passage. Never use knowledge outside the passage.',
-    prompt: `Passage:\n${picked.content}`,
+      'Create two distinct multiple-choice questions, each with exactly 4 options, grounded ONLY in the passage below and testing different facts or concepts from it. Exactly one option per question is correct; the rest must be plausible but clearly wrong given the passage. Never use knowledge outside the passage. A document summary may be given only so you understand what the whole document covers — never cite it, quote it, or treat it as a source of facts; every question must be answerable from the passage alone.',
+    prompt: [
+      picked.sourceSummary
+        ? `Document summary (context only, not a source):\n${picked.sourceSummary}`
+        : null,
+      `Passage:\n${picked.content}`,
+    ]
+      .filter(Boolean)
+      .join('\n\n'),
   });
   if (!questions) return { status: 'exhausted' };
   return {

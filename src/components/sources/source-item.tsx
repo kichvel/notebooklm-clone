@@ -31,6 +31,7 @@ export interface SourceSummary {
   status: 'uploaded' | 'processing' | 'ready' | 'failed';
   failure_reason: string | null;
   created_at: string;
+  intro_generated_at: string | null;
 }
 
 function StatusBadge({ status }: { status: SourceSummary['status'] }) {

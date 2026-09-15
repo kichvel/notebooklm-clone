@@ -1,44 +1,43 @@
-# Design Brief — Studio: remove Study Guide, make Flashcards & Quiz real
+# Design Brief — Per-source intro generation, chat UX, and Studio framing
 
-**Goal:** Drop the redundant Study Guide feature; make Flashcards and Quiz generate real, grounded, cited content on demand instead of static fixture data.
+**Goal:** Replace the one-shot, never-updating, whole-notebook intro with a per-source intro paragraph generated whenever a source finishes ingesting (including long after notebook creation), and reuse each source's summary as framing context for Studio's flashcard/quiz generation.
 **Date:** 2026-09-15
 
 ## Shared understanding
-All three Studio features (`src/components/studio/generation-output.tsx`) are currently pure UI stubs: hardcoded fixture data behind a fake 1s loading spinner, no generation logic, no API route, no Inngest job, no DB schema (confirmed via full-repo survey — `docs/PRODUCT.md` itself says generation logic is "planned but not yet implemented"). Study Guide duplicates the existing notebook overview and isn't worth building; it's removed outright. Flashcards and Quiz become a real feature: clicking the card starts streaming the first item, generated from the notebook's currently-selected ready sources (same selection semantics chat already uses), grounded in retrieved passages with a citation back to source. The user pulls "next" to generate further items indefinitely, one at a time, on demand — not a pre-batched set. The server tracks which source passages have already been used in the session and excludes them from subsequent retrieval, so items don't repeat concepts; when no new groundable passages remain, generation stops and says so explicitly rather than fabricating or repeating. Quiz is multiple-choice only, with instant right/wrong feedback per question and the source passage shown when the user answers wrong. Nothing is persisted — every session is generated fresh in memory/client state, unlike the notebook overview's cached/revisioned model.
+Today, `src/lib/generation/notebookIntro.ts` generates one title + one summary for the *whole notebook*, exactly once, gated by `notebooks.intro_generated_at` — later source additions never regenerate or extend it. It samples only the first 3 chunks per source (capped at 6000 chars total across the notebook), which produces summaries too shallow to give Studio's chunk-level flashcard/quiz generation any real document context (root cause of awkward questions like "Which programming languages are mentioned in the passage?"). We're splitting this into two independent one-shot-per-source and one-shot-per-notebook mechanisms: (1) every time a source reaches `ready`, generate a self-contained intro paragraph for *that source*, built from an evenly-spread sample across its *entire* chunk range (not just the start) so it actually represents the whole document, capped at a per-source character budget — a cheap representative sample, not full-document map-reduce coverage. That intro is inserted into the notebook's chat as its own message as soon as it's ready. Sources added/finishing together generate their intros in parallel and each lands in chat independently as it completes; the chat input stays blocked with a visible "generating…" indicator until every intro currently in flight is done. (2) Notebook title generation is fully decoupled — it stays the existing one-shot mechanism, gated by `notebooks.intro_generated_at`, firing once when the notebook's original first batch of sources all reach a terminal state, but no longer produces a summary or message. (3) Each source's persisted summary becomes framing context in Studio's flashcard/quiz prompts (`src/lib/generation/studio.ts`) — context only, never citable; every generated item still must cite a real passage, mirroring how conversation history is already treated in chat (ADR-005-style: aids interpretation, never a fact source).
 
 ## Key decisions
-- Study Guide is deleted: `StudyGuideOutput`, its `FeatureCard` entry, and the `'study_guide'` member of the `StudioFeature` type.
-- New generation module alongside `src/lib/generation/` (e.g. `src/lib/generation/studio.ts`) reusing `src/lib/retrieval` for passage search and the existing provider interface (`src/lib/providers/`, per ADR-006 — never call the OpenAI SDK directly) for grounded content generation. No new domain module folder — this is a generation flavor, not a new entity type.
-- No new database tables/migrations — results are ephemeral, matching the "regenerate on demand, don't persist" decision.
-- New streaming API routes (mirroring `src/app/api/notebooks/[notebookId]/messages/route.ts`'s NDJSON streaming pattern), one per feature or one parameterized route, e.g. `src/app/api/notebooks/[notebookId]/studio/flashcards/route.ts` and `.../studio/quiz/route.ts`. Each "next" pull is a fresh request; request body carries the selected source IDs and the list of already-used passage/chunk IDs from the client session so the server can exclude them from retrieval.
-- Retrieval must support excluding a given set of chunk IDs from search results (small addition to `src/lib/retrieval` or filtering in the new studio module).
-- Grounding rule (ADR-005) applies: if retrieval turns up no new ungrounded-yet passages, the route returns an explicit "exhausted" event/state instead of generating anything — client renders a stop message, not an error.
-- Quiz generation produces one question, 3-4 options, and the correct option index, plus the citation for the correct answer; client shows the citation only after the user answers incorrectly.
-- Session state (used passage IDs, current card/question) lives in client-side React state within the Studio panel components, scoped per feature (flashcards and quiz track separately) and reset when the notebook, selected sources, or active feature changes.
+- New migration: `sources.intro_summary text`, `sources.intro_generated_at timestamptz` (per-source one-shot guard, same claim pattern as the existing notebook-level column: atomic `.update(...).is('intro_generated_at', null)`), and `messages.source_id uuid references sources(id) on delete set null` (nullable — regular chat messages have none; `set null` so an intro message survives its source being deleted later, matching the existing "deleting a source preserves prior answers" rule).
+- `notebookIntro.ts` stripped to title-only generation; no message insert, no summary, no follow-ups. Trigger condition (all of the *original* batch reaching terminal state) is unchanged.
+- New `src/lib/generation/sourceIntro.ts`: `maybeGenerateSourceIntro(supabase, sourceId)` — only for sources that reach `ready` (a `failed` source gets no intro, matching ADR-007's existing "no retry path" trade-off). Samples chunks at evenly-spaced indices across the source's full `chunk_index` range (not just the first N), joined up to a fixed per-source character budget, then one summary call ("clearly explain what this document is about") + `generateFollowUps` (reused as-is) + a `messages` insert with `source_id` set.
+- Triggered from `src/lib/ingestion/index.ts`'s per-source finalize step (alongside the existing, now title-only, notebook call) — not from the `onFailure` path, since only `ready` sources get intros.
+- Client polling (`notebook-workspace.tsx`) widens its "keep polling" condition to also cover "a ready source has no `intro_generated_at` yet," fixing a latent bug where polling could stop right before an in-flight intro lands, and doubling as the signal that drives the new blocking indicator.
+- Chat input blocking reuses the existing `asking`/"Thinking…" pattern in `chat-panel.tsx` structurally, but as a distinct state/label (e.g. "Summarizing new sources…") so the two are visually distinguishable; it does not block on ingestion itself, only on "ready but intro not yet generated."
+- `studio.ts`'s `selectNextPassage` fetches the passage's owning source's `intro_summary` alongside its existing title/type/origin_url lookup and threads it into the flashcard/quiz generation prompt as explicitly non-citable framing text; a missing/null summary (not yet generated, or generation failed) degrades gracefully — Studio generation is never blocked waiting on it.
 
 ## Constraints
-- Grounding rule (ADR-005): content only from retrieved passages of selected, ready sources; explicit stop instead of fabricating when material is exhausted.
+- Summaries are framing context only, never citable evidence (mirrors ADR-005 and the existing conversation-history-is-context-not-evidence rule).
 - OpenAI calls only through `src/lib/providers/` (ADR-006).
-- Existing `src/lib/generation/`, `src/lib/retrieval/`, `src/lib/citations/` module boundaries preserved — reuse, don't duplicate, their patterns.
-- Source selection semantics must match chat's existing "selected + ready" concept exactly.
+- An intro message must survive its source's later deletion, consistent with the existing citation/answer-preservation rule for source deletion.
 
 ## Out of scope
-- Any persistence/history of generated flashcard or quiz sessions.
-- Configurable batch size, difficulty, or non-multiple-choice quiz formats.
-- Changes to the notebook overview or chat generation themselves (only their patterns are reused).
+- Full-document map-reduce summarization for arbitrarily long sources (capped representative sample instead).
+- Regenerating/updating an intro after it's first generated for a source.
+- Any change to chat's own answer-generation grounding or citation mechanics beyond the new blocking state.
 
 ## Success criteria
-- Study Guide card, component, and type member no longer exist anywhere in the codebase.
-- Clicking Flashcards or Quiz streams a real, source-grounded first item with a working citation — no fixture data remains in `generation-output.tsx`.
-- Pulling "next" repeatedly generates further distinct items without repeating already-used source passages, until material is exhausted, at which point the UI shows an explicit stop message.
-- Quiz gives instant per-question right/wrong feedback and shows the source passage when the answer is wrong.
-- Deselecting a source or switching notebooks changes what subsequent generations draw from, consistent with chat's existing selection behavior.
+- Adding a source to a notebook — the first ever, or the Nth after lots of prior chat — produces its own intro chat message once ingestion finishes, built from a sample spanning the whole document.
+- Adding multiple sources together produces multiple intros landing independently as each completes; chat input stays disabled with a visible indicator until all are done.
+- Notebook title is generated exactly once, from the original first batch, independent of per-source intro timing/content.
+- Flashcard/quiz prompts include the owning source's summary as context; every generated item still carries a real passage citation, never the summary.
+- Deleting a source leaves its intro message intact in chat history.
 
 ## Expected files touched
-- `src/components/studio/generation-output.tsx` — remove Study Guide + fixture data; replace Flashcards/Quiz with real streaming, pull-based, session-tracked UI
-- `src/components/studio/studio-panel.tsx` — remove Study Guide `FeatureCard`; wire session reset on source-selection/notebook change
-- `src/components/studio/studio-panel.test.tsx` — rewrite stub-based tests for real behavior
-- `src/lib/generation/studio.ts` (new) — grounded flashcard/quiz item generation, passage-exclusion-aware
-- `src/lib/retrieval/` — support excluding already-used chunk IDs from search
-- `src/app/api/notebooks/[notebookId]/studio/flashcards/route.ts` (new) — streaming pull-based flashcard generation endpoint
-- `src/app/api/notebooks/[notebookId]/studio/quiz/route.ts` (new) — streaming pull-based quiz generation endpoint
+- `supabase/migrations/<new>.sql` — `sources.intro_summary`, `sources.intro_generated_at`, `messages.source_id`
+- `src/lib/generation/notebookIntro.ts` — strip to title-only
+- `src/lib/generation/sourceIntro.ts` (new) — per-source intro generation
+- `src/lib/ingestion/index.ts` — call the new per-source intro generation from the finalize step
+- `src/app/notebooks/[notebookId]/notebook-workspace.tsx` — widen polling condition; compute/pass a "generating intros" blocking state
+- `src/components/chat/chat-panel.tsx` — distinct blocking indicator for intro generation vs. answer generation
+- `src/lib/generation/studio.ts` — thread `intro_summary` into flashcard/quiz prompts as framing context
+- Relevant API routes/types that surface `sources` rows to the client — expose `intro_generated_at` (or a derived pending flag)
