@@ -47,6 +47,55 @@ export async function generate({
   return response.choices[0]?.message?.content ?? '';
 }
 
+const FOLLOW_UP_QUESTIONS_SCHEMA = {
+  type: 'object',
+  properties: {
+    questions: {
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 3,
+      maxItems: 3,
+    },
+  },
+  required: ['questions'],
+  additionalProperties: false,
+} as const;
+
+export async function generateFollowUpQuestions({
+  system,
+  prompt,
+  model = GENERATION_MODEL,
+}: {
+  system: string;
+  prompt: string;
+  model?: string;
+}): Promise<string[]> {
+  const response = await getClient().chat.completions.create({
+    model,
+    temperature: 0,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: prompt },
+    ],
+    response_format: {
+      type: 'json_schema',
+      json_schema: {
+        name: 'follow_up_questions',
+        strict: true,
+        schema: FOLLOW_UP_QUESTIONS_SCHEMA,
+      },
+    },
+  });
+  const content = response.choices[0]?.message?.content;
+  if (!content) return [];
+  const parsed = JSON.parse(content) as { questions?: unknown };
+  if (!Array.isArray(parsed.questions)) return [];
+  const questions = parsed.questions.filter(
+    (q): q is string => typeof q === 'string' && q.trim().length > 0,
+  );
+  return questions.length === 3 ? questions : [];
+}
+
 export async function* generateStreaming({
   system,
   prompt,

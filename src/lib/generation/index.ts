@@ -2,8 +2,8 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { embed, generateStreaming, REASONING_GENERATION_MODEL } from '@/lib/providers/openai';
 import { search } from '@/lib/retrieval';
-import { followUpPromptInstruction, parseFollowUps, FALLBACK_FOLLOW_UP_QUESTIONS } from './followUps';
-import { rewriteFollowUpQuery } from './rewriteQuery';
+import { generateFollowUps } from './followUps';
+import { fetchRecentMessages, rewriteFollowUpQuery } from './rewriteQuery';
 import { claimGenerationLease, releaseGenerationLease } from './lease';
 import type { ChatSettings } from '@/lib/notebooks/chatSettings';
 
@@ -65,13 +65,13 @@ export function buildSystemPrompt(passageCount: number, chatSettings: ChatSettin
     `You answer questions using ONLY the numbered passages below as evidence. Passages are numbered [1] through [${passageCount}].`,
     'Cite every factual claim with the passage number(s) it is drawn from, in square brackets, e.g. "Cats are mammals [1]."',
     'Never use knowledge outside the passages.',
-    `If the passages do not contain enough information to answer, write exactly this text as your answer, before the follow-up section: "${REFUSAL_TEXT}"`,
+    'Conversation history, if provided, is only to help you understand references and intent in the current question (e.g. pronouns, "that", implicit comparisons) — never use it as a source of facts; facts must still come only from the numbered passages.',
+    `If the passages do not contain enough information to answer, write exactly this text as your answer: "${REFUSAL_TEXT}"`,
     LENGTH_INSTRUCTIONS[chatSettings.chatAnswerLength],
   ];
   if (chatSettings.chatStyle === 'custom' && chatSettings.chatCustomStyle) {
     lines.push(`Adopt this conversational goal, style, or role: ${chatSettings.chatCustomStyle}`);
   }
-  lines.push(followUpPromptInstruction());
   return lines.join('\n');
 }
 
@@ -80,7 +80,7 @@ async function finalizeAsRefused(
   {
     messageId,
     attemptId,
-    followUpQuestions = FALLBACK_FOLLOW_UP_QUESTIONS,
+    followUpQuestions = [],
     reasoning = '',
   }: {
     messageId: string;
@@ -200,7 +200,8 @@ async function* runGeneration(
   let reasoning = '';
   let generated = '';
   try {
-    const retrievalQuestion = await rewriteFollowUpQuery(supabase, { notebookId, question });
+    const history = await fetchRecentMessages(supabase, notebookId);
+    const retrievalQuestion = await rewriteFollowUpQuery(history, question);
 
     const queryEmbedding = await embed(retrievalQuestion);
     const results = await search(supabase, {
@@ -256,10 +257,16 @@ async function* runGeneration(
 
     const system = buildSystemPrompt(results.length, chatSettings);
     const passagesBlock = results.map((r, i) => `[${i + 1}] ${r.content}`).join('\n\n');
+    const historyBlock =
+      history.length > 0
+        ? `Conversation so far:\n${history
+            .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+            .join('\n')}\n\n`
+        : '';
 
     for await (const chunk of generateStreaming({
       system,
-      prompt: `Passages:\n${passagesBlock}\n\nQuestion: ${question}`,
+      prompt: `${historyBlock}Passages:\n${passagesBlock}\n\nQuestion: ${question}`,
       model: REASONING_GENERATION_MODEL,
     })) {
       if (chunk.type === 'reasoning') {
@@ -271,14 +278,20 @@ async function* runGeneration(
       }
     }
 
-    const { text: rawAnswer, followUpQuestions } = parseFollowUps(generated.trim());
+    const rawAnswer = generated.trim();
 
     const validLabels = new Map<number, (typeof results)[number]>();
     for (const match of rawAnswer.matchAll(/\[(\d+)\]/g)) {
       const n = Number(match[1]);
       if (n >= 1 && n <= results.length) validLabels.set(n, results[n - 1]);
     }
-    if (rawAnswer === REFUSAL_TEXT || validLabels.size === 0) {
+    const isRefusal = rawAnswer === REFUSAL_TEXT || validLabels.size === 0;
+
+    const followUpQuestions = isRefusal
+      ? []
+      : await generateFollowUps({ question, answer: rawAnswer, passages: passagesBlock });
+
+    if (isRefusal) {
       yield {
         type: 'done',
         result: await finalizeAsRefused(supabase, {
