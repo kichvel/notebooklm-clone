@@ -29,4 +29,8 @@ describe('buildSystemPrompt', () => {
   it('adds no role/style instruction when style is "default"', () => {
     expect(buildSystemPrompt(3, base)).not.toMatch(/conversational style/i);
   });
+
+  it('instructs the model to use history only for context, not facts', () => {
+    expect(buildSystemPrompt(3, base)).toMatch(/never use it as a source of facts/i);
+  });
 });
