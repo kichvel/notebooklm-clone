@@ -190,7 +190,10 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     }
   }
 
-  async function consumeAnswerStream(response: Response): Promise<boolean> {
+  async function consumeAnswerStream(
+    response: Response,
+    onDone?: () => void | Promise<void>,
+  ): Promise<boolean> {
     if (!response.body) throw new Error('Failed to generate an answer');
     let sawError = false;
     const reader = response.body.getReader();
@@ -214,6 +217,11 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
           );
         } else if (event.type === 'answer_delta') {
           setStreaming((current) => current && { ...current, answer: current.answer + event.text });
+        } else if (event.type === 'done') {
+          // The answer itself is fully validated and persisted here; follow-up question
+          // suggestions are still generating in the background and arrive as a trailing
+          // event, so surface the finished answer to the user without waiting on those.
+          await onDone?.();
         } else if (event.type === 'error') {
           sawError = true;
         }
@@ -254,7 +262,11 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
         body: JSON.stringify({ question: text, sourceIds: [...selectedSourceIds] }),
       });
       if (!response.ok) throw new Error('Failed to ask question');
-      const sawError = await consumeAnswerStream(response);
+      const sawError = await consumeAnswerStream(response, async () => {
+        await refreshMessages();
+        setAsking(false);
+        setStreaming(null);
+      });
       if (sawError) throw new Error('Failed to generate an answer');
       setQuestion('');
       await refreshMessages();
@@ -287,7 +299,12 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
         method: 'POST',
       });
       if (!response.ok) throw new Error('Failed to retry answer');
-      await consumeAnswerStream(response);
+      await consumeAnswerStream(response, async () => {
+        await refreshMessages();
+        setAsking(false);
+        setStreaming(null);
+        setRetryingMessageId(null);
+      });
     } catch {
       setAskError('Something went wrong retrying that answer. Please try again.');
     } finally {
