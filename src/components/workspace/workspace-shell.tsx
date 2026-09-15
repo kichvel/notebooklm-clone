@@ -56,10 +56,17 @@ export function WorkspaceShell({ sources, sourcesHeaderAction, chat, studio }: W
           studioCollapsed ? 'lg:w-12' : 'lg:w-80',
         )}
       >
-        <div className="flex shrink-0 items-center justify-start border-b border-border p-2">
+        <div
+          data-testid="studio-panel-header"
+          className="flex shrink-0 items-center justify-between border-b border-border p-2"
+        >
+          {!studioCollapsed && (
+            <h2 className="min-w-0 flex-1 truncate px-1 text-sm font-medium">Studio</h2>
+          )}
           <Button
             variant="ghost"
             size="icon-sm"
+            className="shrink-0"
             aria-label={studioCollapsed ? 'Expand studio panel' : 'Collapse studio panel'}
             onClick={() => setStudioCollapsed((collapsed) => !collapsed)}
           >

@@ -12,14 +12,14 @@ export function FollowUpChips({
   disabled: boolean;
 }) {
   return (
-    <div className="mt-2 flex flex-wrap gap-2">
+    <div className="mt-2 flex min-w-0 max-w-full flex-col items-start gap-2">
       {questions.map((question) => (
         <Button
           key={question}
           type="button"
           variant="outline"
           size="sm"
-          className="rounded-full"
+          className="h-auto max-w-full min-w-0 rounded-full py-1.5 text-left whitespace-normal"
           disabled={disabled}
           onClick={() => onSelect(question)}
         >

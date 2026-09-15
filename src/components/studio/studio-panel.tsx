@@ -54,7 +54,7 @@ export function StudioPanel({
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 py-8 text-center">
             <SparklesIcon className="size-6 text-muted-foreground" />
-            <p className="text-sm font-medium">Studio output will be saved here.</p>
+            <p className="text-sm font-medium">Studio output will be displayed here.</p>
             <p className="max-w-[220px] text-xs text-muted-foreground">
               {disabled
                 ? 'Add and process sources first, then generate flashcards or a quiz.'

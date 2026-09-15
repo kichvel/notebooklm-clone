@@ -104,21 +104,18 @@ export function ChatPanel({
         <h2 className="text-sm font-medium text-foreground">Chat</h2>
         <ConfigureChatDialog settings={chatSettings} onSave={onUpdateChatSettings} />
       </div>
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-x-hidden overflow-y-auto">
         {messages.length === 0 && !asking ? (
-          <WelcomeState
-            hasProcessingSources={hasProcessingSources}
-            onSelectQuestion={onQuestionChange}
-          />
+          <WelcomeState hasProcessingSources={hasProcessingSources} />
         ) : (
           <ul className="flex flex-col gap-4 p-4">
             {messages.map((message) => (
               <li
                 key={message.id}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                className={`flex min-w-0 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 {message.role === 'assistant' ? (
-                  <div>
+                  <div className="min-w-0 max-w-full">
                     {retryingMessageId === message.id ? (
                       <>
                         {streaming?.reasoning && (
