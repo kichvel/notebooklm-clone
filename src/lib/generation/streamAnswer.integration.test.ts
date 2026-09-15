@@ -78,6 +78,9 @@ describe.skipIf(!hasRealEnv)('streamAnswer', () => {
     expect(done.result.status).toBe('complete');
     expect(done.result.reasoning.length).toBeGreaterThan(0);
     expect(done.result.citations.some((c) => c.content.toLowerCase().includes('cat'))).toBe(true);
+    // Follow-up questions are generated after the answer is finalized (so the client isn't
+    // blocked on them) and delivered via a trailing event, not the 'done' result itself.
+    expect(done.result.followUpQuestions).toEqual([]);
 
     const { data: persistedMessage } = await user
       .from('messages')
@@ -87,13 +90,16 @@ describe.skipIf(!hasRealEnv)('streamAnswer', () => {
     expect(persistedMessage?.status).toBe('complete');
     expect(persistedMessage?.reasoning?.length).toBeGreaterThan(0);
 
+    const followUpEvent = events.find((e) => e.type === 'follow_up_questions');
+    if (followUpEvent?.type !== 'follow_up_questions') throw new Error('expected follow-up event');
+    expect(followUpEvent.questions).toHaveLength(3);
+
     const { data: persistedRow } = await user
       .from('messages')
       .select('follow_up_questions')
       .eq('id', done.result.messageId)
       .single();
     expect(persistedRow?.follow_up_questions).toHaveLength(3);
-    expect(done.result.followUpQuestions).toHaveLength(3);
 
     const refusedEvents = await collect(notebook!.id, 'What is the capital of France?');
     const refusedDone = refusedEvents.find((e) => e.type === 'done');
@@ -101,7 +107,10 @@ describe.skipIf(!hasRealEnv)('streamAnswer', () => {
     expect(refusedDone.result.status).toBe('refused');
     expect(refusedDone.result.answer).toBe(REFUSAL_TEXT);
     expect(refusedDone.result.citations).toEqual([]);
-    expect(refusedDone.result.followUpQuestions).toHaveLength(3);
+    // A refusal never reaches follow-up generation, since there's no grounded answer to
+    // suggest follow-ups from.
+    expect(refusedDone.result.followUpQuestions).toEqual([]);
+    expect(refusedEvents.some((e) => e.type === 'follow_up_questions')).toBe(false);
   }, 60000);
 
   it('persists a pending assistant message before generation completes', async () => {
@@ -224,7 +233,10 @@ describe.skipIf(!hasRealEnv)('streamAnswer', () => {
     if (done?.type !== 'done') throw new Error('expected done event');
     expect(done.result.status).toBe('complete');
     expect(streamedAnswer).toBe(done.result.answer);
-    expect(done.result.followUpQuestions.some((q) => q.includes('---FOLLOWUPS---'))).toBe(false);
+
+    const followUpEvent = events.find((e) => e.type === 'follow_up_questions');
+    if (followUpEvent?.type !== 'follow_up_questions') throw new Error('expected follow-up event');
+    expect(followUpEvent.questions.some((q) => q.includes('---FOLLOWUPS---'))).toBe(false);
   }, 60000);
 
   it('resolves a pronoun-dependent follow-up question using prior conversation turns', async () => {

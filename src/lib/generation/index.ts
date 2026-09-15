@@ -50,6 +50,7 @@ export type AskQuestionEvent =
   | { type: 'reasoning_delta'; text: string }
   | { type: 'answer_delta'; text: string }
   | { type: 'done'; result: AskQuestionResult }
+  | { type: 'follow_up_questions'; messageId: string; questions: string[] }
   | { type: 'error'; message: string };
 
 const LENGTH_INSTRUCTIONS: Record<ChatSettings['chatAnswerLength'], string> = {
@@ -130,7 +131,7 @@ async function finalizeAsComplete(
     attemptId,
     rawAnswer,
     reasoning,
-    followUpQuestions,
+    followUpQuestions = [],
     selectedSourceIds,
     citationRows,
   }: {
@@ -138,7 +139,7 @@ async function finalizeAsComplete(
     attemptId: string;
     rawAnswer: string;
     reasoning: string;
-    followUpQuestions: string[];
+    followUpQuestions?: string[];
     selectedSourceIds: string[];
     citationRows: CitationRow[];
   },
@@ -287,19 +288,10 @@ async function* runGeneration(
     }
     const isRefusal = rawAnswer === REFUSAL_TEXT || validLabels.size === 0;
 
-    const followUpQuestions = isRefusal
-      ? []
-      : await generateFollowUps({ question, answer: rawAnswer, passages: passagesBlock });
-
     if (isRefusal) {
       yield {
         type: 'done',
-        result: await finalizeAsRefused(supabase, {
-          messageId,
-          attemptId,
-          followUpQuestions,
-          reasoning,
-        }),
+        result: await finalizeAsRefused(supabase, { messageId, attemptId, reasoning }),
       };
       return;
     }
@@ -320,6 +312,10 @@ async function* runGeneration(
       };
     });
 
+    // Finalize and surface the answer as soon as it's validated, rather than making the
+    // client wait on a follow-up-question suggestion call that has nothing to do with the
+    // answer's correctness; follow-ups are generated afterward and delivered as a trailing
+    // event once ready.
     yield {
       type: 'done',
       result: await finalizeAsComplete(supabase, {
@@ -327,11 +323,30 @@ async function* runGeneration(
         attemptId,
         rawAnswer,
         reasoning,
-        followUpQuestions,
         selectedSourceIds,
         citationRows,
       }),
     };
+
+    try {
+      const followUpQuestions = await generateFollowUps({
+        question,
+        answer: rawAnswer,
+        passages: passagesBlock,
+      });
+      if (followUpQuestions.length > 0) {
+        const { error } = await supabase
+          .from('messages')
+          .update({ follow_up_questions: followUpQuestions })
+          .eq('id', messageId)
+          .eq('attempt_id', attemptId);
+        if (error) throw error;
+      }
+      yield { type: 'follow_up_questions', messageId, questions: followUpQuestions };
+    } catch (err) {
+      console.error('follow-up question generation failed', { messageId, attemptId, err });
+      yield { type: 'follow_up_questions', messageId, questions: [] };
+    }
   } catch (err) {
     await supabase
       .from('messages')
