@@ -2,8 +2,20 @@
 
 export type StudioFeature = 'flashcards' | 'quiz';
 
-// TODO(task 3/4/5): replace with real router for grounded flashcards/quiz generation
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- feature param kept for the stable signature; unused until the router is implemented
-export function GenerationOutput({ feature }: { feature: StudioFeature }) {
-  return null;
+import { FlashcardsOutput } from './flashcards-output';
+import { QuizOutput } from './quiz-output';
+
+export function GenerationOutput({
+  feature,
+  notebookId,
+  sourceIds,
+}: {
+  feature: StudioFeature;
+  notebookId: string;
+  sourceIds: string[];
+}) {
+  if (feature === 'flashcards') {
+    return <FlashcardsOutput notebookId={notebookId} sourceIds={sourceIds} />;
+  }
+  return <QuizOutput notebookId={notebookId} sourceIds={sourceIds} />;
 }

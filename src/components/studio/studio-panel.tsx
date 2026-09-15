@@ -16,7 +16,9 @@ const FEATURES: {
 ];
 
 export function StudioPanel({
+  notebookId,
   readySourceCount,
+  selectedSourceIds,
 }: {
   notebookId: string;
   readySourceCount: number;
@@ -24,6 +26,7 @@ export function StudioPanel({
 }) {
   const [activeFeature, setActiveFeature] = useState<StudioFeature | null>(null);
   const disabled = readySourceCount === 0;
+  const sourceIds = [...selectedSourceIds];
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4">
@@ -42,7 +45,12 @@ export function StudioPanel({
 
       <div className="flex-1 overflow-y-auto">
         {activeFeature ? (
-          <GenerationOutput feature={activeFeature} />
+          <GenerationOutput
+            key={`${notebookId}-${activeFeature}-${sourceIds.join(',')}`}
+            feature={activeFeature}
+            notebookId={notebookId}
+            sourceIds={sourceIds}
+          />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 py-8 text-center">
             <SparklesIcon className="size-6 text-muted-foreground" />
