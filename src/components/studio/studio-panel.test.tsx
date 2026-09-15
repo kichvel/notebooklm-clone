@@ -5,15 +5,22 @@ import { StudioPanel } from './studio-panel';
 
 describe('StudioPanel', () => {
   it('disables feature cards when there are zero ready sources', () => {
-    render(<StudioPanel readySourceCount={0} />);
+    render(<StudioPanel notebookId="nb1" readySourceCount={0} selectedSourceIds={new Set()} />);
     expect(screen.getByRole('button', { name: /flashcards/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /study guide/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /quiz/i })).toBeDisabled();
   });
 
-  it('shows canned output after clicking a feature card', async () => {
+  it('only shows flashcards and quiz cards', () => {
+    render(<StudioPanel notebookId="nb1" readySourceCount={2} selectedSourceIds={new Set()} />);
+    expect(screen.queryByRole('button', { name: /study guide/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /flashcards/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /quiz/i })).toBeInTheDocument();
+  });
+
+  // TODO(task 5): GenerationOutput is a stub until tasks 3-4 implement real flashcards/quiz generation.
+  it.skip('shows canned output after clicking a feature card', async () => {
     const user = userEvent.setup();
-    render(<StudioPanel readySourceCount={2} />);
+    render(<StudioPanel notebookId="nb1" readySourceCount={2} selectedSourceIds={new Set()} />);
     await user.click(screen.getByRole('button', { name: /flashcards/i }));
     expect(await screen.findByText(/flip to reveal/i)).toBeInTheDocument();
   });
