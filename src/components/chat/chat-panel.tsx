@@ -20,6 +20,7 @@ export interface Message {
   follow_up_questions: string[] | null;
   citations: Citation[];
   reasoning: string | null;
+  introSource?: { title: string; filename: string | null } | null;
 }
 
 function AnswerText({
@@ -91,6 +92,7 @@ export function ChatPanel({
   const [openCitation, setOpenCitation] = useState<Citation | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const hasPendingIntro = pendingIntroTitles.length > 0;
+  const isBusyWithSources = hasProcessingSources || hasPendingIntro;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' });
@@ -137,6 +139,16 @@ export function ChatPanel({
                       </>
                     ) : (
                       <>
+                        {message.introSource && (
+                          <div className="mb-1">
+                            <h4 className="text-sm font-semibold">{message.introSource.title}</h4>
+                            {message.introSource.filename && (
+                              <p className="text-xs text-muted-foreground">
+                                {message.introSource.filename}
+                              </p>
+                            )}
+                          </div>
+                        )}
                         {message.reasoning && (
                           <ThoughtsPanel text={message.reasoning} streaming={false} />
                         )}
@@ -189,9 +201,7 @@ export function ChatPanel({
                   data-testid="asking-indicator"
                   className="flex flex-col gap-2 text-sm text-muted-foreground"
                 >
-                  {streaming?.reasoning && (
-                    <ThoughtsPanel text={streaming.reasoning} streaming />
-                  )}
+                  {streaming?.reasoning && <ThoughtsPanel text={streaming.reasoning} streaming />}
                   {streaming?.answer ? (
                     <AnswerText
                       content={streaming.answer}
@@ -204,6 +214,17 @@ export function ChatPanel({
                       <span>Thinking…</span>
                     </div>
                   )}
+                </div>
+              </li>
+            )}
+            {hasProcessingSources && (
+              <li className="flex justify-start" aria-live="polite">
+                <div
+                  data-testid="source-processing-indicator"
+                  className="flex items-center gap-2 text-sm text-muted-foreground"
+                >
+                  <Loader2Icon className="size-4 animate-spin" aria-hidden />
+                  <span>Processing new source…</span>
                 </div>
               </li>
             )}
@@ -235,12 +256,21 @@ export function ChatPanel({
             value={question}
             onChange={(e) => onQuestionChange(e.target.value)}
             placeholder="Ask a question about your sources"
-            disabled={asking || hasPendingIntro}
+            disabled={asking || isBusyWithSources}
             required
           />
           <div className="flex flex-col items-center gap-1">
-            <Button type="submit" size="icon" disabled={asking || hasPendingIntro} aria-label="Ask">
-              {asking || hasPendingIntro ? <Loader2Icon className="animate-spin" /> : <SendIcon />}
+            <Button
+              type="submit"
+              size="icon"
+              disabled={asking || isBusyWithSources}
+              aria-label="Ask"
+            >
+              {asking || isBusyWithSources ? (
+                <Loader2Icon className="animate-spin" />
+              ) : (
+                <SendIcon />
+              )}
             </Button>
             <span className="text-xs whitespace-nowrap text-muted-foreground">
               Sources: {sourceCount}

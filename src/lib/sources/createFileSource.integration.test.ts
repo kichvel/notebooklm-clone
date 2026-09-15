@@ -6,8 +6,8 @@ import { createFileSource } from './index';
 
 const hasRealEnv = Boolean(
   process.env.NEXT_PUBLIC_SUPABASE_URL &&
-    process.env.SUPABASE_SERVICE_ROLE_KEY &&
-    process.env.OPENAI_API_KEY,
+  process.env.SUPABASE_SERVICE_ROLE_KEY &&
+  process.env.OPENAI_API_KEY,
 );
 
 describe.skipIf(!hasRealEnv)('createFileSource', () => {
@@ -44,6 +44,7 @@ describe.skipIf(!hasRealEnv)('createFileSource', () => {
     });
 
     expect(source.title).toBe('Quarterly Report');
+    expect(source.original_filename).toBe('Quarterly Report.pdf');
     expect(source.type).toBe('pdf');
     expect(['uploaded', 'failed']).toContain(source.status);
     expect(source.storage_path).toBe(`${notebook!.id}/${source.id}/original.pdf`);
@@ -84,6 +85,7 @@ describe.skipIf(!hasRealEnv)('createFileSource', () => {
     });
 
     expect(source.title).toBe('Interview');
+    expect(source.original_filename).toBe('Interview.mp3');
     expect(source.type).toBe('audio');
     expect(['uploaded', 'failed']).toContain(source.status);
     expect(source.storage_path).toBe(`${notebook!.id}/${source.id}/original.mp3`);
