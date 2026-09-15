@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { generateNextFlashcard } from '@/lib/generation/studio';
+import { generateNextFlashcards } from '@/lib/generation/studio';
 
 export async function POST(
   request: NextRequest,
@@ -32,14 +32,14 @@ export async function POST(
   }
 
   try {
-    const result = await generateNextFlashcard(supabase, {
+    const result = await generateNextFlashcards(supabase, {
       notebookId,
       sourceIds,
       excludeChunkIds,
     });
     return NextResponse.json(result);
   } catch (error) {
-    console.error('generateNextFlashcard failed', { notebookId, error });
+    console.error('generateNextFlashcards failed', { notebookId, error });
     return NextResponse.json({ status: 'error' }, { status: 500 });
   }
 }

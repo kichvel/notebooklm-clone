@@ -43,16 +43,8 @@ export function QuizOutput({
         const data = await response.json();
         if (data.status === 'ok') {
           setItems((prev) => {
-            const next = [
-              ...prev,
-              {
-                question: data.question,
-                options: data.options,
-                correctIndex: data.correctIndex,
-                citation: data.citation,
-              },
-            ];
-            setCursor(next.length - 1);
+            const next = [...prev, ...data.items];
+            setCursor(next.length - data.items.length);
             return next;
           });
           setStatus('ready');
@@ -95,7 +87,7 @@ export function QuizOutput({
       setStatus('ready');
       return;
     }
-    const excludeChunkIds = items.map((item) => item.citation.chunkId);
+    const excludeChunkIds = [...new Set(items.map((item) => item.citation.chunkId))];
     fetchNext(excludeChunkIds);
   }
 
