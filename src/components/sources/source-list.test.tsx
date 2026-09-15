@@ -12,9 +12,26 @@ const sources: SourceSummary[] = [
     failure_reason: 'bad file',
     type: 'pdf',
     created_at: '',
+    intro_generated_at: null,
   },
-  { id: '2', title: 'b.pdf', status: 'ready', failure_reason: null, type: 'pdf', created_at: '' },
-  { id: '3', title: 'c.pdf', status: 'ready', failure_reason: null, type: 'pdf', created_at: '' },
+  {
+    id: '2',
+    title: 'b.pdf',
+    status: 'ready',
+    failure_reason: null,
+    type: 'pdf',
+    created_at: '',
+    intro_generated_at: null,
+  },
+  {
+    id: '3',
+    title: 'c.pdf',
+    status: 'ready',
+    failure_reason: null,
+    type: 'pdf',
+    created_at: '',
+    intro_generated_at: null,
+  },
 ];
 
 describe('SourceList', () => {
@@ -91,6 +108,7 @@ describe('SourceList', () => {
       failure_reason: null,
       type,
       created_at: '',
+      intro_generated_at: null,
     }));
     render(
       <SourceList

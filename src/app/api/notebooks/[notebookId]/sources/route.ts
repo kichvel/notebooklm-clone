@@ -98,7 +98,7 @@ export async function GET(
 
   const { data, error } = await supabase
     .from('sources')
-    .select('id, title, type, status, failure_reason, created_at')
+    .select('id, title, type, status, failure_reason, created_at, intro_generated_at')
     .eq('notebook_id', notebookId)
     .is('deleted_at', null)
     .order('created_at');

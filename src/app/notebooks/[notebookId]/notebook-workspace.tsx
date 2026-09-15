@@ -90,12 +90,10 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
 
   useEffect(() => {
     const hasActiveSource = sources.some((source) => ACTIVE_STATUSES.has(source.status));
-    const awaitingIntro =
-      !hasActiveSource &&
-      sources.some((source) => source.status === 'ready') &&
-      messages.length === 0 &&
-      notebookTitle === 'Untitled notebook';
-    if (!hasActiveSource && !awaitingIntro) return;
+    const hasPendingIntro = sources.some(
+      (source) => source.status === 'ready' && !source.intro_generated_at,
+    );
+    if (!hasActiveSource && !hasPendingIntro) return;
     const interval = setInterval(() => {
       refreshSources();
       refreshNotebook();
@@ -103,7 +101,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     }, 2000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sources, messages, notebookTitle]);
+  }, [sources]);
 
   async function postSource(input: RequestInit) {
     setError(null);
@@ -228,6 +226,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
 
   async function submitQuestion(text: string) {
     if (asking) return;
+    if (sources.some((s) => s.status === 'ready' && !s.intro_generated_at)) return;
     setAsking(true);
     setAskError(null);
     setStreaming({ reasoning: '', answer: '', citations: [] });
@@ -320,6 +319,9 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
   );
 
   const hasProcessingSources = sources.some((s) => ACTIVE_STATUSES.has(s.status));
+  const pendingIntroTitles = sources
+    .filter((s) => s.status === 'ready' && !s.intro_generated_at)
+    .map((s) => s.title);
 
   const chatPanel = (
     <ChatPanel
@@ -337,6 +339,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
       streaming={streaming}
       retryingMessageId={retryingMessageId}
       onRetry={handleRetryAnswer}
+      pendingIntroTitles={pendingIntroTitles}
     />
   );
 

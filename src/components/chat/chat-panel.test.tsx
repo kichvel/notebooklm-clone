@@ -40,6 +40,7 @@ function renderPanel(
   streaming: { reasoning: string; answer: string; citations: Message['citations'] } | null = null,
   retryingMessageId: string | null = null,
   onRetry = vi.fn(),
+  pendingIntroTitles: string[] = [],
 ) {
   return render(
     <ChatPanel
@@ -57,6 +58,7 @@ function renderPanel(
       streaming={streaming}
       retryingMessageId={retryingMessageId}
       onRetry={onRetry}
+      pendingIntroTitles={pendingIntroTitles}
     />,
   );
 }
@@ -126,6 +128,23 @@ describe('ChatPanel', () => {
     expect(screen.getByTestId('asking-indicator')).toBeInTheDocument();
   });
 
+  it('disables input and shows an indicator while an intro is pending', () => {
+    renderPanel(
+      [messageWithCitation],
+      vi.fn(),
+      false,
+      0,
+      null,
+      null,
+      vi.fn(),
+      ['Q3 Report.pdf'],
+    );
+    expect(screen.getByTestId('intro-pending-indicator')).toBeInTheDocument();
+    expect(screen.getByText(/summarizing/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/ask a question/i)).toBeDisabled();
+    expect(screen.getByRole('button', { name: /ask/i })).toBeDisabled();
+  });
+
   it('scrolls to the bottom when the processing indicator appears and again when the answer arrives', () => {
     const scrollIntoViewMock = vi.fn();
     HTMLElement.prototype.scrollIntoView = scrollIntoViewMock;
@@ -153,6 +172,7 @@ describe('ChatPanel', () => {
         streaming={null}
         retryingMessageId={null}
         onRetry={vi.fn()}
+        pendingIntroTitles={[]}
       />,
     );
     expect(scrollIntoViewMock.mock.calls.length).toBeGreaterThan(callsAfterMount);
@@ -180,6 +200,7 @@ describe('ChatPanel', () => {
         streaming={null}
         retryingMessageId={null}
         onRetry={vi.fn()}
+        pendingIntroTitles={[]}
       />,
     );
     expect(scrollIntoViewMock.mock.calls.length).toBeGreaterThan(callsBeforeAnswer);
