@@ -175,4 +175,109 @@ describe.skipIf(!hasRealEnv)('streamAnswer', () => {
     let event = await first.next();
     while (!event.done) event = await first.next();
   }, 60000);
+
+  it('never streams follow-up delimiter text into the answer', async () => {
+    const user = await createPrimaryTestClient();
+    const { data: notebook, error: notebookError } = await user
+      .from('notebooks')
+      .insert({ title: 'No delimiter leakage test' })
+      .select()
+      .single();
+    expect(notebookError).toBeNull();
+    createdNotebookIds.push(notebook!.id);
+
+    const { data: source, error: sourceError } = await user
+      .from('sources')
+      .insert({
+        notebook_id: notebook!.id,
+        type: 'pasted_text',
+        title: 'Mountain facts',
+        status: 'ready',
+      })
+      .select()
+      .single();
+    expect(sourceError).toBeNull();
+
+    const text = 'Mount Everest is the tallest mountain above sea level, standing at 8,849 meters.';
+    const embedding = await embed(text);
+    const { error: chunksError } = await user
+      .from('source_chunks')
+      .insert({ source_id: source!.id, chunk_index: 0, content: text, embedding });
+    expect(chunksError).toBeNull();
+
+    const events: AskQuestionEvent[] = [];
+    for await (const event of streamAnswer(user, {
+      notebookId: notebook!.id,
+      question: 'How tall is Mount Everest?',
+    })) {
+      events.push(event);
+    }
+
+    const streamedAnswer = events
+      .filter((e) => e.type === 'answer_delta')
+      .map((e) => e.text)
+      .join('');
+    expect(streamedAnswer).not.toContain('---FOLLOWUPS---');
+
+    const done = events.find((e) => e.type === 'done');
+    expect(done?.type).toBe('done');
+    if (done?.type !== 'done') throw new Error('expected done event');
+    expect(done.result.status).toBe('complete');
+    expect(streamedAnswer).toBe(done.result.answer);
+    expect(done.result.followUpQuestions.some((q) => q.includes('---FOLLOWUPS---'))).toBe(false);
+  }, 60000);
+
+  it('resolves a pronoun-dependent follow-up question using prior conversation turns', async () => {
+    const user = await createPrimaryTestClient();
+    const { data: notebook, error: notebookError } = await user
+      .from('notebooks')
+      .insert({ title: 'Conversational awareness test' })
+      .select()
+      .single();
+    expect(notebookError).toBeNull();
+    createdNotebookIds.push(notebook!.id);
+
+    const { data: source, error: sourceError } = await user
+      .from('sources')
+      .insert({
+        notebook_id: notebook!.id,
+        type: 'pasted_text',
+        title: 'Author career history',
+        status: 'ready',
+      })
+      .select()
+      .single();
+    expect(sourceError).toBeNull();
+
+    const fact2019 = 'In 2019, the author worked as a backend engineer at Acme Corp.';
+    const fact2017 = 'In 2017, the author worked as a data analyst at Beta Inc.';
+    const [embedding2019, embedding2017] = await Promise.all([embed(fact2019), embed(fact2017)]);
+
+    const { error: chunksError } = await user.from('source_chunks').insert([
+      { source_id: source!.id, chunk_index: 0, content: fact2019, embedding: embedding2019 },
+      { source_id: source!.id, chunk_index: 1, content: fact2017, embedding: embedding2017 },
+    ]);
+    expect(chunksError).toBeNull();
+
+    async function collect(question: string) {
+      const events: AskQuestionEvent[] = [];
+      for await (const event of streamAnswer(user, { notebookId: notebook!.id, question })) {
+        events.push(event);
+      }
+      return events;
+    }
+
+    const firstEvents = await collect('What did the author do in 2019?');
+    const firstDone = firstEvents.find((e) => e.type === 'done');
+    if (firstDone?.type !== 'done') throw new Error('expected done event');
+    expect(firstDone.result.status).toBe('complete');
+    expect(firstDone.result.answer.toLowerCase()).toContain('acme');
+
+    const followUpEvents = await collect('What was he doing 2 years before that?');
+    const followUpDone = followUpEvents.find((e) => e.type === 'done');
+    if (followUpDone?.type !== 'done') throw new Error('expected done event');
+    expect(followUpDone.result.status).toBe('complete');
+    const followUpAnswer = followUpDone.result.answer.toLowerCase();
+    expect(followUpAnswer).toMatch(/beta|data analyst/);
+  }, 90000);
 });
