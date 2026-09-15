@@ -68,7 +68,9 @@ describe.skipIf(!hasRealEnv)('selectNextPassage', () => {
     expect(first.status).toBe('ok');
     const second = await selectNextPassage(user, {
       notebookId: notebook.id,
-      excludeChunkIds: [(first as { status: 'ok'; citation: { chunkId: string } }).citation.chunkId],
+      excludeChunkIds: [
+        (first as { status: 'ok'; citation: { chunkId: string } }).citation.chunkId,
+      ],
     });
     expect(second.status).toBe('ok');
     const third = await selectNextPassage(user, {
@@ -79,4 +81,20 @@ describe.skipIf(!hasRealEnv)('selectNextPassage', () => {
     });
     expect(third.status).toBe('exhausted');
   }, 30000);
+
+  it('includes the source intro summary as framing context on the passage result', async () => {
+    const user = await createPrimaryTestClient();
+    const notebook = await makeNotebook(user);
+    const source = await makeReadySourceWithChunks(user, notebook.id, ['Fact A.']);
+    await user
+      .from('sources')
+      .update({ intro_summary: "This document is a resume covering the author's work history." })
+      .eq('id', source.id);
+
+    const result = await selectNextPassage(user, { notebookId: notebook.id, excludeChunkIds: [] });
+    expect(result.status).toBe('ok');
+    expect((result as { status: 'ok'; sourceSummary: string | null }).sourceSummary).toContain(
+      'resume',
+    );
+  });
 });
