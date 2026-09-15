@@ -47,6 +47,7 @@ function normalizeText(text: string): string {
 }
 
 const TARGET_CHUNK_CHARS = 800;
+const MIN_CHUNK_CHARS = 200;
 
 function packUnits(units: string[], joiner: string, maxChars: number): string[] {
   const packed: string[] = [];
@@ -65,6 +66,49 @@ function packUnits(units: string[], joiner: string, maxChars: number): string[] 
   return packed;
 }
 
+const BULLET_LINE = /^[•▪◦‣∙*-]\s|^\d+[.)]\s/;
+const HARD_LINE_BREAK = /[.:;!?]$/;
+
+// PDF text extraction gives one line per visually wrapped line on the page, not one
+// per sentence or bullet, so a single bullet point often spans several extracted
+// lines. Rejoin a line into the previous one when the previous line doesn't already
+// end a sentence/clause and the current line isn't starting a new bullet — so the
+// size-based packer below only ever sees whole sentences/bullets as its units and
+// can't cut one in half.
+export function joinWrappedLines(text: string): string {
+  const out: string[] = [];
+  for (const line of text.split('\n')) {
+    const prev = out[out.length - 1];
+    const prevJoinable =
+      prev !== undefined && prev.trim().length > 0 && !HARD_LINE_BREAK.test(prev.trim());
+    if (prevJoinable && line.trim().length > 0 && !BULLET_LINE.test(line.trim())) {
+      out[out.length - 1] = `${prev} ${line.trim()}`;
+    } else {
+      out.push(line);
+    }
+  }
+  return out.join('\n');
+}
+
+// A size-based split can still leave a small leftover piece (e.g. one short trailing
+// sentence). Fold anything under the minimum into a neighbor rather than publishing a
+// decontextualized fragment as its own chunk.
+function mergeTinyPieces(pieces: string[], minChars: number): string[] {
+  const merged: string[] = [];
+  for (const piece of pieces) {
+    if (merged.length > 0 && piece.length < minChars) {
+      merged[merged.length - 1] = `${merged[merged.length - 1]} ${piece}`;
+    } else {
+      merged.push(piece);
+    }
+  }
+  if (merged.length > 1 && merged[0].length < minChars) {
+    const first = merged.shift()!;
+    merged[0] = `${first} ${merged[0]}`;
+  }
+  return merged;
+}
+
 // Paragraphs (blank-line-separated) rarely exceed the target on their own, but PDF
 // text extraction often yields a whole page as one blank-line-free paragraph. Fall
 // back through progressively finer boundaries — lines, then sentences, then a hard
@@ -75,7 +119,7 @@ function splitOversizedParagraph(text: string, maxChars: number): string[] {
   const lines = text.split('\n').filter((line) => line.length > 0);
   const lineChunks = lines.length > 1 ? packUnits(lines, '\n', maxChars) : [text];
 
-  return lineChunks.flatMap((chunk) => {
+  const pieces = lineChunks.flatMap((chunk) => {
     if (chunk.length <= maxChars) return [chunk];
 
     const sentences = chunk.split(/(?<=[.!?])\s+(?=[A-Z0-9])/).filter((s) => s.length > 0);
@@ -83,17 +127,19 @@ function splitOversizedParagraph(text: string, maxChars: number): string[] {
 
     return sentenceChunks.flatMap((sentence) => {
       if (sentence.length <= maxChars) return [sentence];
-      const pieces: string[] = [];
+      const hardPieces: string[] = [];
       for (let i = 0; i < sentence.length; i += maxChars) {
-        pieces.push(sentence.slice(i, i + maxChars));
+        hardPieces.push(sentence.slice(i, i + maxChars));
       }
-      return pieces;
+      return hardPieces;
     });
   });
+
+  return mergeTinyPieces(pieces, MIN_CHUNK_CHARS);
 }
 
 export function chunkBlock(block: SourceBlock): Chunk[] {
-  return block.text
+  return joinWrappedLines(block.text)
     .split(/\n\s*\n/)
     .map((part) => part.trim())
     .filter((part) => part.length > 0)

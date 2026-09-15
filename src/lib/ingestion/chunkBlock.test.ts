@@ -80,4 +80,63 @@ describe('chunkBlock', () => {
     expect(chunks).toHaveLength(1);
     expect(chunks[0].text).toBe('One paragraph.');
   });
+
+  it('keeps a bullet that wraps across two PDF-extracted lines together instead of cutting it mid-sentence', () => {
+    // Mirrors real PDF extraction: a bullet's continuation line has no leading marker
+    // and the line before it has no sentence-ending punctuation, so it should be
+    // rejoined before the size-based packer ever runs.
+    const padding = Array.from(
+      { length: 20 },
+      (_, i) => `Filler sentence number ${i} adds bulk to this paragraph.`,
+    ).join('\n');
+    const bulletStart =
+      '▪ Trained and certified autonomous vehicle safety drivers for the MOIA autonomous mobility';
+    const bulletContinuation =
+      'program, conducting theoretical and practical training sessions and operational assessments.';
+    const text = [padding, bulletStart, bulletContinuation].join('\n');
+    expect(text.length).toBeGreaterThan(MAX_CHARS);
+
+    const chunks = chunkBlock({ text, page: 1 });
+
+    expect(
+      chunks.some(
+        (c) =>
+          c.text.includes('MOIA autonomous mobility') &&
+          c.text.includes('conducting theoretical and practical'),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not rejoin a line that starts a new bullet, even without preceding punctuation', () => {
+    const text = [
+      '▪ First bullet has no trailing period',
+      '▪ Second bullet starts fresh regardless',
+    ].join('\n');
+
+    const chunks = chunkBlock({ text, page: 1 });
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].text).toBe(text);
+  });
+
+  it('does not rejoin a line that follows sentence-ending punctuation', () => {
+    const text = ['First sentence ends cleanly.', 'Second sentence starts fresh.'].join('\n');
+
+    const chunks = chunkBlock({ text, page: 1 });
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].text).toBe(text);
+  });
+
+  it('merges a tiny leftover piece into its neighbor instead of publishing an orphaned fragment', () => {
+    const bigLine = `${'Y'.repeat(789)}.`;
+    const smallLine = 'Tiny trailing fact stands alone.';
+    const text = [bigLine, smallLine].join('\n');
+    expect(text.length).toBeGreaterThan(MAX_CHARS);
+
+    const chunks = chunkBlock({ text, page: 1 });
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].text).toContain(smallLine);
+  });
 });
