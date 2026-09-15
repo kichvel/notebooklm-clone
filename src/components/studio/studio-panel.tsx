@@ -1,24 +1,32 @@
 'use client';
 
 import { useState } from 'react';
-import { SparklesIcon, BookOpenIcon, LayersIcon, HelpCircleIcon } from 'lucide-react';
+import { SparklesIcon, LayersIcon, HelpCircleIcon } from 'lucide-react';
 import { FeatureCard } from './feature-card';
 import { GenerationOutput, type StudioFeature } from './generation-output';
 
 const FEATURES: {
   feature: StudioFeature;
   label: string;
-  icon: typeof BookOpenIcon;
+  icon: typeof LayersIcon;
   tint: 'blue' | 'green' | 'purple';
 }[] = [
-  { feature: 'study_guide', label: 'Study guide', icon: BookOpenIcon, tint: 'blue' },
   { feature: 'flashcards', label: 'Flashcards', icon: LayersIcon, tint: 'purple' },
   { feature: 'quiz', label: 'Quiz', icon: HelpCircleIcon, tint: 'green' },
 ];
 
-export function StudioPanel({ readySourceCount }: { readySourceCount: number }) {
+export function StudioPanel({
+  notebookId,
+  readySourceCount,
+  selectedSourceIds,
+}: {
+  notebookId: string;
+  readySourceCount: number;
+  selectedSourceIds: Set<string>;
+}) {
   const [activeFeature, setActiveFeature] = useState<StudioFeature | null>(null);
   const disabled = readySourceCount === 0;
+  const sourceIds = [...selectedSourceIds];
 
   return (
     <div className="flex flex-1 flex-col gap-4 p-4">
@@ -37,15 +45,20 @@ export function StudioPanel({ readySourceCount }: { readySourceCount: number }) 
 
       <div className="flex-1 overflow-y-auto">
         {activeFeature ? (
-          <GenerationOutput feature={activeFeature} />
+          <GenerationOutput
+            key={`${notebookId}-${activeFeature}-${sourceIds.join(',')}`}
+            feature={activeFeature}
+            notebookId={notebookId}
+            sourceIds={sourceIds}
+          />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-2 py-8 text-center">
             <SparklesIcon className="size-6 text-muted-foreground" />
             <p className="text-sm font-medium">Studio output will be saved here.</p>
             <p className="max-w-[220px] text-xs text-muted-foreground">
               {disabled
-                ? 'Add and process sources first, then generate a study guide, flashcards, or a quiz.'
-                : 'Pick a card above to generate a study guide, flashcards, or a quiz.'}
+                ? 'Add and process sources first, then generate flashcards or a quiz.'
+                : 'Pick a card above to generate flashcards or a quiz.'}
             </p>
           </div>
         )}

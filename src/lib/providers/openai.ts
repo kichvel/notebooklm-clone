@@ -96,6 +96,95 @@ export async function generateFollowUpQuestions({
   return questions.length === 3 ? questions : [];
 }
 
+const FLASHCARD_SCHEMA = {
+  type: 'object',
+  properties: { front: { type: 'string' }, back: { type: 'string' } },
+  required: ['front', 'back'],
+  additionalProperties: false,
+} as const;
+
+export async function generateFlashcard({
+  system,
+  prompt,
+  model = GENERATION_MODEL,
+}: {
+  system: string;
+  prompt: string;
+  model?: string;
+}): Promise<{ front: string; back: string } | null> {
+  const response = await getClient().chat.completions.create({
+    model,
+    temperature: 0,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: prompt },
+    ],
+    response_format: {
+      type: 'json_schema',
+      json_schema: { name: 'flashcard', strict: true, schema: FLASHCARD_SCHEMA },
+    },
+  });
+  const content = response.choices[0]?.message?.content;
+  if (!content) return null;
+  const parsed = JSON.parse(content) as { front?: unknown; back?: unknown };
+  if (typeof parsed.front !== 'string' || typeof parsed.back !== 'string') return null;
+  if (!parsed.front.trim() || !parsed.back.trim()) return null;
+  return { front: parsed.front, back: parsed.back };
+}
+
+const QUIZ_QUESTION_SCHEMA = {
+  type: 'object',
+  properties: {
+    question: { type: 'string' },
+    options: { type: 'array', items: { type: 'string' }, minItems: 4, maxItems: 4 },
+    correctIndex: { type: 'integer', minimum: 0, maximum: 3 },
+  },
+  required: ['question', 'options', 'correctIndex'],
+  additionalProperties: false,
+} as const;
+
+export async function generateQuizQuestion({
+  system,
+  prompt,
+  model = GENERATION_MODEL,
+}: {
+  system: string;
+  prompt: string;
+  model?: string;
+}): Promise<{ question: string; options: string[]; correctIndex: number } | null> {
+  const response = await getClient().chat.completions.create({
+    model,
+    temperature: 0,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: prompt },
+    ],
+    response_format: {
+      type: 'json_schema',
+      json_schema: { name: 'quiz_question', strict: true, schema: QUIZ_QUESTION_SCHEMA },
+    },
+  });
+  const content = response.choices[0]?.message?.content;
+  if (!content) return null;
+  const parsed = JSON.parse(content) as {
+    question?: unknown;
+    options?: unknown;
+    correctIndex?: unknown;
+  };
+  if (
+    typeof parsed.question !== 'string' ||
+    !Array.isArray(parsed.options) ||
+    parsed.options.length !== 4 ||
+    !parsed.options.every((o): o is string => typeof o === 'string' && o.trim().length > 0) ||
+    typeof parsed.correctIndex !== 'number' ||
+    parsed.correctIndex < 0 ||
+    parsed.correctIndex > 3
+  ) {
+    return null;
+  }
+  return { question: parsed.question, options: parsed.options, correctIndex: parsed.correctIndex };
+}
+
 export async function* generateStreaming({
   system,
   prompt,

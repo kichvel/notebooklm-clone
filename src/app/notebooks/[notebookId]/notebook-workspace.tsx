@@ -341,7 +341,13 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
   );
 
   const readySourceCount = sources.filter((s) => s.status === 'ready').length;
-  const studioPanel = <StudioPanel readySourceCount={readySourceCount} />;
+  const studioPanel = (
+    <StudioPanel
+      notebookId={notebookId}
+      readySourceCount={readySourceCount}
+      selectedSourceIds={selectedSourceIds}
+    />
+  );
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
