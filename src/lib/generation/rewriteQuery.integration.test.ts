@@ -2,7 +2,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { createServiceClient } from '@/lib/supabase/server';
 import { createPrimaryTestClient } from '@/lib/supabase/test-helpers';
-import { rewriteFollowUpQuery } from './rewriteQuery';
+import { fetchRecentMessages, rewriteFollowUpQuery } from './rewriteQuery';
 
 const hasRealEnv = Boolean(
   process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -44,10 +44,8 @@ describe.skipIf(!hasRealEnv)('rewriteFollowUpQuery', () => {
     ]);
     expect(messagesError).toBeNull();
 
-    const rewritten = await rewriteFollowUpQuery(user, {
-      notebookId: notebook!.id,
-      question: 'what about the other one?',
-    });
+    const history = await fetchRecentMessages(user, notebook!.id);
+    const rewritten = await rewriteFollowUpQuery(history, 'what about the other one?');
 
     expect(rewritten.toLowerCase()).not.toContain('the other one');
     expect(rewritten).toContain('Q2');
