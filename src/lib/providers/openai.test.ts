@@ -1,6 +1,13 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { embed, generateFollowUpQuestions, generateStreaming, REASONING_GENERATION_MODEL } from './openai';
+import {
+  embed,
+  generateFlashcard,
+  generateFollowUpQuestions,
+  generateQuizQuestion,
+  generateStreaming,
+  REASONING_GENERATION_MODEL,
+} from './openai';
 
 describe.skipIf(!process.env.OPENAI_API_KEY)('embed', () => {
   it('returns a 1536-dimension embedding vector', async () => {
@@ -33,5 +40,34 @@ describe.skipIf(!process.env.OPENAI_API_KEY)('generateFollowUpQuestions', () => 
     });
     expect(questions).toHaveLength(3);
     for (const q of questions) expect(q.trim().length).toBeGreaterThan(0);
+  }, 15000);
+});
+
+describe.skipIf(!process.env.OPENAI_API_KEY)('generateFlashcard', () => {
+  it('returns a flashcard with non-empty front and back', async () => {
+    const card = await generateFlashcard({
+      system:
+        'Create one study flashcard grounded ONLY in the passage below. "front" is a question or prompt; "back" is the answer.',
+      prompt: 'Passage: Cats are obligate carnivores and typically sleep 12-16 hours a day.',
+    });
+    expect(card).not.toBeNull();
+    expect(card!.front.trim().length).toBeGreaterThan(0);
+    expect(card!.back.trim().length).toBeGreaterThan(0);
+  }, 15000);
+});
+
+describe.skipIf(!process.env.OPENAI_API_KEY)('generateQuizQuestion', () => {
+  it('returns a question with 4 options and a valid correctIndex', async () => {
+    const question = await generateQuizQuestion({
+      system:
+        'Create one multiple-choice question with exactly 4 options, grounded ONLY in the passage below. Exactly one option is correct.',
+      prompt: 'Passage: Cats are obligate carnivores and typically sleep 12-16 hours a day.',
+    });
+    expect(question).not.toBeNull();
+    expect(question!.question.trim().length).toBeGreaterThan(0);
+    expect(question!.options).toHaveLength(4);
+    for (const o of question!.options) expect(o.trim().length).toBeGreaterThan(0);
+    expect(question!.correctIndex).toBeGreaterThanOrEqual(0);
+    expect(question!.correctIndex).toBeLessThanOrEqual(3);
   }, 15000);
 });
