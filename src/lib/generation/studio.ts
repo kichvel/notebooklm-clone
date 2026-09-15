@@ -1,6 +1,6 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { embed, generateFlashcard, generateQuizQuestion } from '@/lib/providers/openai';
+import { embed, generateFlashcards, generateQuizQuestions } from '@/lib/providers/openai';
 import { search } from '@/lib/retrieval';
 import { buildYoutubeTimestampUrl, type Citation } from './index';
 
@@ -13,8 +13,7 @@ const STUDIO_QUERY_TEXT =
 const RETRIEVAL_POOL_SIZE = 30;
 
 export type PassageResult =
-  | { status: 'ok'; content: string; citation: StudioCitation }
-  | { status: 'exhausted' };
+  { status: 'ok'; content: string; citation: StudioCitation } | { status: 'exhausted' };
 
 export async function selectNextPassage(
   supabase: SupabaseClient,
@@ -65,46 +64,54 @@ export async function selectNextPassage(
   };
 }
 
-export type StudioFlashcardResult =
-  | { status: 'ok'; card: { front: string; back: string }; citation: StudioCitation }
+export type StudioFlashcardsResult =
+  | {
+      status: 'ok';
+      items: { card: { front: string; back: string }; citation: StudioCitation }[];
+    }
   | { status: 'exhausted' };
 
-export async function generateNextFlashcard(
+export async function generateNextFlashcards(
   supabase: SupabaseClient,
   params: { notebookId: string; sourceIds?: string[]; excludeChunkIds: string[] },
-): Promise<StudioFlashcardResult> {
+): Promise<StudioFlashcardsResult> {
   const picked = await selectNextPassage(supabase, params);
   if (picked.status === 'exhausted') return picked;
-  const card = await generateFlashcard({
+  const cards = await generateFlashcards({
     system:
-      'Create one study flashcard grounded ONLY in the passage below. "front" is a question or prompt; "back" is the answer. Never use knowledge outside the passage.',
+      'Create two distinct study flashcards grounded ONLY in the passage below, each testing a different fact or concept from it. "front" is a question or prompt; "back" is the answer. Never use knowledge outside the passage.',
     prompt: `Passage:\n${picked.content}`,
   });
-  if (!card) return { status: 'exhausted' };
-  return { status: 'ok', card, citation: picked.citation };
+  if (!cards) return { status: 'exhausted' };
+  return { status: 'ok', items: cards.map((card) => ({ card, citation: picked.citation })) };
 }
 
 export type StudioQuizResult =
   | {
       status: 'ok';
-      question: string;
-      options: string[];
-      correctIndex: number;
-      citation: StudioCitation;
+      items: {
+        question: string;
+        options: string[];
+        correctIndex: number;
+        citation: StudioCitation;
+      }[];
     }
   | { status: 'exhausted' };
 
-export async function generateNextQuizQuestion(
+export async function generateNextQuizQuestions(
   supabase: SupabaseClient,
   params: { notebookId: string; sourceIds?: string[]; excludeChunkIds: string[] },
 ): Promise<StudioQuizResult> {
   const picked = await selectNextPassage(supabase, params);
   if (picked.status === 'exhausted') return picked;
-  const question = await generateQuizQuestion({
+  const questions = await generateQuizQuestions({
     system:
-      'Create one multiple-choice question with exactly 4 options, grounded ONLY in the passage below. Exactly one option is correct; the rest must be plausible but clearly wrong given the passage. Never use knowledge outside the passage.',
+      'Create two distinct multiple-choice questions, each with exactly 4 options, grounded ONLY in the passage below and testing different facts or concepts from it. Exactly one option per question is correct; the rest must be plausible but clearly wrong given the passage. Never use knowledge outside the passage.',
     prompt: `Passage:\n${picked.content}`,
   });
-  if (!question) return { status: 'exhausted' };
-  return { status: 'ok', ...question, citation: picked.citation };
+  if (!questions) return { status: 'exhausted' };
+  return {
+    status: 'ok',
+    items: questions.map((question) => ({ ...question, citation: picked.citation })),
+  };
 }

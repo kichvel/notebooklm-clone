@@ -2,9 +2,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   embed,
-  generateFlashcard,
+  generateFlashcards,
   generateFollowUpQuestions,
-  generateQuizQuestion,
+  generateQuizQuestions,
   generateStreaming,
   REASONING_GENERATION_MODEL,
 } from './openai';
@@ -43,31 +43,39 @@ describe.skipIf(!process.env.OPENAI_API_KEY)('generateFollowUpQuestions', () => 
   }, 15000);
 });
 
-describe.skipIf(!process.env.OPENAI_API_KEY)('generateFlashcard', () => {
-  it('returns a flashcard with non-empty front and back', async () => {
-    const card = await generateFlashcard({
+describe.skipIf(!process.env.OPENAI_API_KEY)('generateFlashcards', () => {
+  it('returns exactly 2 flashcards, each with non-empty front and back', async () => {
+    const cards = await generateFlashcards({
       system:
-        'Create one study flashcard grounded ONLY in the passage below. "front" is a question or prompt; "back" is the answer.',
-      prompt: 'Passage: Cats are obligate carnivores and typically sleep 12-16 hours a day.',
+        'Create two distinct study flashcards grounded ONLY in the passage below, each testing a different fact. "front" is a question or prompt; "back" is the answer.',
+      prompt:
+        'Passage: Cats are obligate carnivores and typically sleep 12-16 hours a day. They have retractable claws and excellent night vision.',
     });
-    expect(card).not.toBeNull();
-    expect(card!.front.trim().length).toBeGreaterThan(0);
-    expect(card!.back.trim().length).toBeGreaterThan(0);
+    expect(cards).not.toBeNull();
+    expect(cards).toHaveLength(2);
+    for (const card of cards!) {
+      expect(card.front.trim().length).toBeGreaterThan(0);
+      expect(card.back.trim().length).toBeGreaterThan(0);
+    }
   }, 15000);
 });
 
-describe.skipIf(!process.env.OPENAI_API_KEY)('generateQuizQuestion', () => {
-  it('returns a question with 4 options and a valid correctIndex', async () => {
-    const question = await generateQuizQuestion({
+describe.skipIf(!process.env.OPENAI_API_KEY)('generateQuizQuestions', () => {
+  it('returns exactly 2 questions, each with 4 options and a valid correctIndex', async () => {
+    const questions = await generateQuizQuestions({
       system:
-        'Create one multiple-choice question with exactly 4 options, grounded ONLY in the passage below. Exactly one option is correct.',
-      prompt: 'Passage: Cats are obligate carnivores and typically sleep 12-16 hours a day.',
+        'Create two distinct multiple-choice questions, each with exactly 4 options, grounded ONLY in the passage below. Exactly one option per question is correct.',
+      prompt:
+        'Passage: Cats are obligate carnivores and typically sleep 12-16 hours a day. They have retractable claws and excellent night vision.',
     });
-    expect(question).not.toBeNull();
-    expect(question!.question.trim().length).toBeGreaterThan(0);
-    expect(question!.options).toHaveLength(4);
-    for (const o of question!.options) expect(o.trim().length).toBeGreaterThan(0);
-    expect(question!.correctIndex).toBeGreaterThanOrEqual(0);
-    expect(question!.correctIndex).toBeLessThanOrEqual(3);
+    expect(questions).not.toBeNull();
+    expect(questions).toHaveLength(2);
+    for (const question of questions!) {
+      expect(question.question.trim().length).toBeGreaterThan(0);
+      expect(question.options).toHaveLength(4);
+      for (const o of question.options) expect(o.trim().length).toBeGreaterThan(0);
+      expect(question.correctIndex).toBeGreaterThanOrEqual(0);
+      expect(question.correctIndex).toBeLessThanOrEqual(3);
+    }
   }, 15000);
 });

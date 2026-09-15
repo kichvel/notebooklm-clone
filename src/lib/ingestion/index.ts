@@ -45,13 +45,60 @@ function normalizeText(text: string): string {
     .trim();
 }
 
-function chunkBlock(block: SourceBlock): Chunk[] {
+const TARGET_CHUNK_CHARS = 800;
+
+function packUnits(units: string[], joiner: string, maxChars: number): string[] {
+  const packed: string[] = [];
+  let current = '';
+  for (const unit of units) {
+    if (current.length === 0) {
+      current = unit;
+    } else if (current.length + joiner.length + unit.length <= maxChars) {
+      current += joiner + unit;
+    } else {
+      packed.push(current);
+      current = unit;
+    }
+  }
+  if (current.length > 0) packed.push(current);
+  return packed;
+}
+
+// Paragraphs (blank-line-separated) rarely exceed the target on their own, but PDF
+// text extraction often yields a whole page as one blank-line-free paragraph. Fall
+// back through progressively finer boundaries — lines, then sentences, then a hard
+// character cut — only for the paragraphs that actually need it.
+function splitOversizedParagraph(text: string, maxChars: number): string[] {
+  if (text.length <= maxChars) return [text];
+
+  const lines = text.split('\n').filter((line) => line.length > 0);
+  const lineChunks = lines.length > 1 ? packUnits(lines, '\n', maxChars) : [text];
+
+  return lineChunks.flatMap((chunk) => {
+    if (chunk.length <= maxChars) return [chunk];
+
+    const sentences = chunk.split(/(?<=[.!?])\s+(?=[A-Z0-9])/).filter((s) => s.length > 0);
+    const sentenceChunks = sentences.length > 1 ? packUnits(sentences, ' ', maxChars) : [chunk];
+
+    return sentenceChunks.flatMap((sentence) => {
+      if (sentence.length <= maxChars) return [sentence];
+      const pieces: string[] = [];
+      for (let i = 0; i < sentence.length; i += maxChars) {
+        pieces.push(sentence.slice(i, i + maxChars));
+      }
+      return pieces;
+    });
+  });
+}
+
+export function chunkBlock(block: SourceBlock): Chunk[] {
   return block.text
     .split(/\n\s*\n/)
     .map((part) => part.trim())
     .filter((part) => part.length > 0)
-    .map((part) => ({
-      text: part,
+    .flatMap((part) => splitOversizedParagraph(part, TARGET_CHUNK_CHARS))
+    .map((text) => ({
+      text,
       page: block.page,
       section: block.section,
       startSeconds: block.startSeconds,
@@ -63,7 +110,10 @@ export async function markSourceIngestionFailed(
   sourceId: string,
   reason: string,
 ) {
-  await supabase.from('sources').update({ status: 'failed', failure_reason: reason }).eq('id', sourceId);
+  await supabase
+    .from('sources')
+    .update({ status: 'failed', failure_reason: reason })
+    .eq('id', sourceId);
 }
 
 export const ingestSource = inngest.createFunction(

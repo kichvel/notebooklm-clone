@@ -40,8 +40,8 @@ export function FlashcardsOutput({
         const data = await response.json();
         if (data.status === 'ok') {
           setItems((prev) => {
-            const next = [...prev, { card: data.card, citation: data.citation }];
-            setCursor(next.length - 1);
+            const next = [...prev, ...data.items];
+            setCursor(next.length - data.items.length);
             return next;
           });
           setStatus('ready');
@@ -79,7 +79,7 @@ export function FlashcardsOutput({
       setStatus('ready');
       return;
     }
-    const excludeChunkIds = items.map((item) => item.citation.chunkId);
+    const excludeChunkIds = [...new Set(items.map((item) => item.citation.chunkId))];
     fetchNext(excludeChunkIds);
   }
 

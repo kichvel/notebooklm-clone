@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { generateNextQuizQuestion } from '@/lib/generation/studio';
+import { generateNextQuizQuestions } from '@/lib/generation/studio';
 
 export async function POST(
   request: NextRequest,
@@ -32,14 +32,14 @@ export async function POST(
   }
 
   try {
-    const result = await generateNextQuizQuestion(supabase, {
+    const result = await generateNextQuizQuestions(supabase, {
       notebookId,
       sourceIds,
       excludeChunkIds,
     });
     return NextResponse.json(result);
   } catch (error) {
-    console.error('generateNextQuizQuestion failed', { notebookId, error });
+    console.error('generateNextQuizQuestions failed', { notebookId, error });
     return NextResponse.json({ status: 'error' }, { status: 500 });
   }
 }
