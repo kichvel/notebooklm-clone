@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createWebsiteSource } from '@/lib/sources';
+import {
+  checkRateLimit,
+  checkGlobalCeiling,
+  getClientIp,
+  RateLimitExceededError,
+  DailyCeilingExceededError,
+} from '@/lib/abuse-prevention';
 
 export async function POST(
   request: NextRequest,
@@ -12,6 +19,16 @@ export async function POST(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  try {
+    await checkRateLimit('sourceCreate', user.id, getClientIp(request));
+    await checkGlobalCeiling();
+  } catch (error) {
+    if (error instanceof RateLimitExceededError || error instanceof DailyCeilingExceededError) {
+      return NextResponse.json({ error: error.message }, { status: 429 });
+    }
+    throw error;
+  }
 
   const body = await request.json();
   const { url } = body ?? {};

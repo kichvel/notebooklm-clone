@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { MAX_TRANSCRIPTION_AUDIO_BYTES } from '@/lib/providers/openai';
 import { createClient } from '@/lib/supabase/server';
 import { createFileSource, createPastedTextSource } from '@/lib/sources';
+import {
+  checkRateLimit,
+  checkGlobalCeiling,
+  getClientIp,
+  RateLimitExceededError,
+  DailyCeilingExceededError,
+} from '@/lib/abuse-prevention';
 
 const MAX_SOURCES_PER_NOTEBOOK = 10;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -65,6 +72,16 @@ export async function POST(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  try {
+    await checkRateLimit('sourceCreate', user.id, getClientIp(request));
+    await checkGlobalCeiling();
+  } catch (error) {
+    if (error instanceof RateLimitExceededError || error instanceof DailyCeilingExceededError) {
+      return NextResponse.json({ error: error.message }, { status: 429 });
+    }
+    throw error;
+  }
 
   const contentType = request.headers.get('content-type') ?? '';
   if (contentType.includes('multipart/form-data')) {
