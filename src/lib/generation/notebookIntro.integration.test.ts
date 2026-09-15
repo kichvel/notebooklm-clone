@@ -2,7 +2,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { createPrimaryTestClient } from '@/lib/supabase/test-helpers';
 import { createServiceClient } from '@/lib/supabase/server';
-import { maybeGenerateNotebookIntro } from './notebookIntro';
+import { maybeGenerateNotebookTitle } from './notebookIntro';
 
 const hasRealEnv = Boolean(
   process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -10,7 +10,7 @@ const hasRealEnv = Boolean(
   process.env.OPENAI_API_KEY,
 );
 
-describe.skipIf(!hasRealEnv)('maybeGenerateNotebookIntro', () => {
+describe.skipIf(!hasRealEnv)('maybeGenerateNotebookTitle', () => {
   const createdNotebookIds: string[] = [];
   afterAll(async () => {
     if (createdNotebookIds.length === 0) return;
@@ -34,7 +34,7 @@ describe.skipIf(!hasRealEnv)('maybeGenerateNotebookIntro', () => {
       .from('sources')
       .insert({ notebook_id: notebook.id, type: 'pasted_text', title: 'A', status: 'processing' });
 
-    await maybeGenerateNotebookIntro(user, notebook.id);
+    await maybeGenerateNotebookTitle(user, notebook.id);
 
     const { data: after } = await user
       .from('notebooks')
@@ -52,7 +52,7 @@ describe.skipIf(!hasRealEnv)('maybeGenerateNotebookIntro', () => {
       .from('sources')
       .insert({ notebook_id: notebook.id, type: 'pasted_text', title: 'A', status: 'failed' });
 
-    await maybeGenerateNotebookIntro(user, notebook.id);
+    await maybeGenerateNotebookTitle(user, notebook.id);
 
     const { data: after } = await user
       .from('notebooks')
@@ -62,7 +62,7 @@ describe.skipIf(!hasRealEnv)('maybeGenerateNotebookIntro', () => {
     expect(after?.intro_generated_at).toBeNull();
   });
 
-  it('generates a title and posts one summary message once a ready source exists, and never repeats', async () => {
+  it('generates a title once a ready source exists, posts no message, and never repeats', async () => {
     const user = await createPrimaryTestClient();
     const notebook = await makeNotebook(user);
     const { data: source } = await user
@@ -76,7 +76,7 @@ describe.skipIf(!hasRealEnv)('maybeGenerateNotebookIntro', () => {
       content: 'Domestic cats are small, typically furry, carnivorous mammals kept as pets.',
     });
 
-    await maybeGenerateNotebookIntro(user, notebook.id);
+    await maybeGenerateNotebookTitle(user, notebook.id);
 
     const { data: afterFirst } = await user
       .from('notebooks')
@@ -86,20 +86,15 @@ describe.skipIf(!hasRealEnv)('maybeGenerateNotebookIntro', () => {
     expect(afterFirst?.title).not.toBe('Untitled notebook');
     expect(afterFirst?.intro_generated_at).not.toBeNull();
 
-    const { data: messages } = await user
-      .from('messages')
-      .select('role, status, follow_up_questions')
-      .eq('notebook_id', notebook.id);
-    expect(messages).toHaveLength(1);
-    expect(messages![0].role).toBe('assistant');
-    expect(messages![0].status).toBe('complete');
-    expect(messages![0].follow_up_questions).toHaveLength(3);
+    const { data: messages } = await user.from('messages').select('id').eq('notebook_id', notebook.id);
+    expect(messages).toHaveLength(0);
 
-    await maybeGenerateNotebookIntro(user, notebook.id);
-    const { data: messagesAfterSecondCall } = await user
-      .from('messages')
-      .select('id')
-      .eq('notebook_id', notebook.id);
-    expect(messagesAfterSecondCall).toHaveLength(1);
+    await maybeGenerateNotebookTitle(user, notebook.id);
+    const { data: afterSecond } = await user
+      .from('notebooks')
+      .select('title')
+      .eq('id', notebook.id)
+      .single();
+    expect(afterSecond?.title).toBe(afterFirst?.title);
   }, 30000);
 });
