@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { streamAnswer, type AskQuestionEvent } from '@/lib/generation';
+import { streamAnswer, NotebookBusyError, type AskQuestionEvent } from '@/lib/generation';
 import { resolveCitations } from '@/lib/citations';
 
 export const maxDuration = 60;
@@ -39,8 +39,12 @@ export async function POST(
           send(event);
         }
       } catch (error) {
-        console.error('streamAnswer failed', { notebookId, error });
-        send({ type: 'error', message: 'Failed to generate an answer' });
+        if (error instanceof NotebookBusyError) {
+          send({ type: 'error', message: error.message });
+        } else {
+          console.error('streamAnswer failed', { notebookId, error });
+          send({ type: 'error', message: 'Failed to generate an answer' });
+        }
       } finally {
         controller.close();
       }
@@ -74,6 +78,9 @@ export async function GET(
   const withCitations = await Promise.all(
     (messages ?? []).map(async (message) => ({
       ...message,
+      // A fresh page load is never watching an actively-streaming generation, so a
+      // 'pending' row it sees can only be an abandoned attempt.
+      status: message.status === 'pending' ? 'failed' : message.status,
       citations: message.role === 'assistant' ? await resolveCitations(supabase, message.id) : [],
       reasoning: message.role === 'assistant' ? message.reasoning : null,
     })),

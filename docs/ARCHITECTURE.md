@@ -104,15 +104,11 @@ Source states include uploaded, processing, ready, and failed, with separate del
 
 ## 7. Notebook overview
 
-After submitted sources reach terminal ingestion states, a separate workflow updates the overview using all ready sources, independent of checkboxes. Failed sources do not block an overview of successful ones.
+The first time a notebook's sources all reach a terminal ingestion state (ready or failed), with at least one ready, a one-shot workflow samples early chunks from each ready source and generates a short title, a synthesis, and initial follow-up questions as the notebook's opening message. This runs exactly once per notebook, claimed via a generation guard on the notebook row so concurrent finalize steps cannot double-generate it.
 
-Generate and cache grounded summaries per source, retaining chunk references. For documents beyond the summarization context budget, summarize bounded groups of chunks before combining them. Synthesize the source summaries into a concise notebook overview and key topics, each paired with a suggested question. Clicking a topic fills the input without submitting it.
+Later source additions or deletions do not regenerate the overview, and checkbox (selection) changes never do — the overview reflects only the sources present at first generation. If the first attempt fails (no usable sample text, provider error), the notebook simply has no overview; nothing partial or stale is published, and there is no retry path.
 
-Summary generation has its own status and retry path: a summary failure does not make an already indexed source unavailable to chat. Do not silently publish an overview that claims coverage of sources whose summaries failed.
-
-Additions and deletions trigger regeneration; checkbox changes do not. Show **Updating overview…** while keeping the previous overview visible. If updating fails, retain it with a visible failure/staleness indication. With no ready sources, show an empty state rather than a current-looking obsolete synthesis.
-
-Cache keys include source content version and summary model/prompt configuration. Never retrieve only Top-K chunks to represent the whole notebook overview.
+Regeneration, per-source summary caching, and revision/staleness tracking are explicitly out of scope for this one-shot design; see ADR-007 for the trade-off.
 
 ## 8. Retrieval and grounded chat
 

@@ -66,13 +66,13 @@ The trade-offs below explain the choices made during planning, not a claim that 
 
 ## ADR-007 — Generate notebook overviews automatically
 
-**Decision:** Automatically generate a concise synthesis and key topics from all ready sources. Cache grounded source summaries and regenerate the overview after source additions or deletions, using revision checks to prevent stale publication. Checkbox changes affect chat only.
+**Decision:** Automatically generate a concise synthesis once, the first time a notebook's initial sources all reach a terminal ingestion state. This is a one-shot generation per notebook: later source additions, deletions, and checkbox changes never trigger regeneration.
 
-**Rationale:** Immediate usefulness is the main driver: the notebook should help users understand their material before their first question. Cached source summaries reduce repeated work when the source collection changes.
+**Rationale:** Immediate usefulness is the main driver: the notebook should help users understand their material before their first question. A single generation on first content keeps the pipeline simple and avoids revision-check and caching complexity for the MVP.
 
-**Trade-offs:** Additional model calls, summary storage, invalidation, and revision logic are required. Summarization can lose detail, so chat retrieves original passages rather than treating the overview as its evidence. Failed updates preserve the previous overview with an explicit status.
+**Trade-offs:** The overview can drift out of date as sources are later added or removed; there is no mechanism to refresh it. Summarization can lose detail, so chat retrieves original passages rather than treating the overview as its evidence. A failed first attempt simply leaves the notebook without an overview.
 
-**Revisit when:** Quality evaluations or observed cost and latency justify different summary granularity, caching, or update behavior.
+**Revisit when:** Observed staleness meaningfully hurts usefulness enough to justify regeneration, caching, and revision-check complexity.
 
 ## ADR-008 — Stream provisional answers
 

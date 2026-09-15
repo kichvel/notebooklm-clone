@@ -30,6 +30,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     answer: string;
     citations: Citation[];
   } | null>(null);
+  const [retryingMessageId, setRetryingMessageId] = useState<string | null>(null);
   const [chatSettings, setChatSettings] = useState<ChatSettings>({
     chatStyle: 'default',
     chatCustomStyle: null,
@@ -170,7 +171,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     });
   }
 
-  async function handleRetry(sourceId: string) {
+  async function handleRetrySource(sourceId: string) {
     const response = await fetch(`/api/notebooks/${notebookId}/sources/${sourceId}/retry`, {
       method: 'POST',
     });
@@ -189,6 +190,40 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
       });
       await refreshSources();
     }
+  }
+
+  async function consumeAnswerStream(response: Response): Promise<boolean> {
+    if (!response.body) throw new Error('Failed to generate an answer');
+    let sawError = false;
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newlineIndex;
+      while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, newlineIndex);
+        buffer = buffer.slice(newlineIndex + 1);
+        if (!line.trim()) continue;
+        const event = JSON.parse(line) as AskQuestionEvent;
+        if (event.type === 'passages') {
+          setStreaming((current) => current && { ...current, citations: event.citations });
+        } else if (event.type === 'reasoning_delta') {
+          setStreaming(
+            (current) => current && { ...current, reasoning: current.reasoning + event.text },
+          );
+        } else if (event.type === 'answer_delta') {
+          setStreaming(
+            (current) => current && { ...current, answer: current.answer + event.text },
+          );
+        } else if (event.type === 'error') {
+          sawError = true;
+        }
+      }
+    }
+    return sawError;
   }
 
   async function submitQuestion(text: string) {
@@ -210,43 +245,14 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
         citations: [],
       },
     ]);
-    let sawError = false;
     try {
       const response = await fetch(`/api/notebooks/${notebookId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: text, sourceIds: [...selectedSourceIds] }),
       });
-      if (!response.ok || !response.body) throw new Error('Failed to ask question');
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let newlineIndex;
-        while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-          const line = buffer.slice(0, newlineIndex);
-          buffer = buffer.slice(newlineIndex + 1);
-          if (!line.trim()) continue;
-          const event = JSON.parse(line) as AskQuestionEvent;
-          if (event.type === 'passages') {
-            setStreaming((current) => current && { ...current, citations: event.citations });
-          } else if (event.type === 'reasoning_delta') {
-            setStreaming(
-              (current) => current && { ...current, reasoning: current.reasoning + event.text },
-            );
-          } else if (event.type === 'answer_delta') {
-            setStreaming(
-              (current) => current && { ...current, answer: current.answer + event.text },
-            );
-          } else if (event.type === 'error') {
-            sawError = true;
-          }
-        }
-      }
+      if (!response.ok) throw new Error('Failed to ask question');
+      const sawError = await consumeAnswerStream(response);
       if (sawError) throw new Error('Failed to generate an answer');
       setQuestion('');
       await refreshMessages();
@@ -268,6 +274,29 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     void submitQuestion(text);
   }
 
+  async function handleRetryAnswer(messageId: string) {
+    if (asking) return;
+    setAsking(true);
+    setAskError(null);
+    setRetryingMessageId(messageId);
+    setStreaming({ reasoning: '', answer: '', citations: [] });
+    try {
+      const response = await fetch(
+        `/api/notebooks/${notebookId}/messages/${messageId}/retry`,
+        { method: 'POST' },
+      );
+      if (!response.ok) throw new Error('Failed to retry answer');
+      await consumeAnswerStream(response);
+    } catch {
+      setAskError('Something went wrong retrying that answer. Please try again.');
+    } finally {
+      await refreshMessages();
+      setAsking(false);
+      setStreaming(null);
+      setRetryingMessageId(null);
+    }
+  }
+
   const sourcesHeaderAction = (
     <>
       <AddSourceDialog
@@ -285,7 +314,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
       sources={sources}
       selectedIds={selectedSourceIds}
       onSelectionChange={setSelectedSourceIds}
-      onRetry={handleRetry}
+      onRetry={handleRetrySource}
       onDelete={handleDeleteSource}
     />
   );
@@ -306,6 +335,8 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
       chatSettings={chatSettings}
       onUpdateChatSettings={handleUpdateChatSettings}
       streaming={streaming}
+      retryingMessageId={retryingMessageId}
+      onRetry={handleRetryAnswer}
     />
   );
 
