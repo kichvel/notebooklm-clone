@@ -41,6 +41,7 @@ function renderPanel(
   retryingMessageId: string | null = null,
   onRetry = vi.fn(),
   pendingIntroTitles: string[] = [],
+  hasProcessingSources = false,
 ) {
   return render(
     <ChatPanel
@@ -50,7 +51,7 @@ function renderPanel(
       onAsk={vi.fn()}
       asking={asking}
       askError={null}
-      hasProcessingSources={false}
+      hasProcessingSources={hasProcessingSources}
       onSelectFollowUp={onSelectFollowUp}
       sourceCount={sourceCount}
       chatSettings={defaultChatSettings}
@@ -129,20 +130,30 @@ describe('ChatPanel', () => {
   });
 
   it('disables input and shows an indicator while an intro is pending', () => {
-    renderPanel(
-      [messageWithCitation],
-      vi.fn(),
-      false,
-      0,
-      null,
-      null,
-      vi.fn(),
-      ['Q3 Report.pdf'],
-    );
+    renderPanel([messageWithCitation], vi.fn(), false, 0, null, null, vi.fn(), ['Q3 Report.pdf']);
     expect(screen.getByTestId('intro-pending-indicator')).toBeInTheDocument();
     expect(screen.getByText(/summarizing/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/ask a question/i)).toBeDisabled();
     expect(screen.getByRole('button', { name: /ask/i })).toBeDisabled();
+  });
+
+  it('disables input and shows an indicator while a new source is still processing', () => {
+    renderPanel([messageWithCitation], vi.fn(), false, 0, null, null, vi.fn(), [], true);
+    expect(screen.getByTestId('source-processing-indicator')).toBeInTheDocument();
+    expect(screen.getByText(/processing new source/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/ask a question/i)).toBeDisabled();
+    expect(screen.getByRole('button', { name: /ask/i })).toBeDisabled();
+  });
+
+  it('shows the source title and filename as a header for a source intro message', () => {
+    renderPanel([
+      {
+        ...messageWithCitation,
+        introSource: { title: 'Quarterly Report', filename: 'Q3 Report.pdf' },
+      },
+    ]);
+    expect(screen.getByRole('heading', { name: 'Quarterly Report' })).toBeInTheDocument();
+    expect(screen.getByText('Q3 Report.pdf')).toBeInTheDocument();
   });
 
   it('scrolls to the bottom when the processing indicator appears and again when the answer arrives', () => {

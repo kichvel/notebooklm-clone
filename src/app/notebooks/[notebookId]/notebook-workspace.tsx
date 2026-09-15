@@ -213,9 +213,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
             (current) => current && { ...current, reasoning: current.reasoning + event.text },
           );
         } else if (event.type === 'answer_delta') {
-          setStreaming(
-            (current) => current && { ...current, answer: current.answer + event.text },
-          );
+          setStreaming((current) => current && { ...current, answer: current.answer + event.text });
         } else if (event.type === 'error') {
           sawError = true;
         }
@@ -226,7 +224,12 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
 
   async function submitQuestion(text: string) {
     if (asking) return;
-    if (sources.some((s) => s.status === 'ready' && !s.intro_generated_at)) return;
+    if (
+      sources.some(
+        (s) => ACTIVE_STATUSES.has(s.status) || (s.status === 'ready' && !s.intro_generated_at),
+      )
+    )
+      return;
     setAsking(true);
     setAskError(null);
     setStreaming({ reasoning: '', answer: '', citations: [] });
@@ -280,10 +283,9 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     setRetryingMessageId(messageId);
     setStreaming({ reasoning: '', answer: '', citations: [] });
     try {
-      const response = await fetch(
-        `/api/notebooks/${notebookId}/messages/${messageId}/retry`,
-        { method: 'POST' },
-      );
+      const response = await fetch(`/api/notebooks/${notebookId}/messages/${messageId}/retry`, {
+        method: 'POST',
+      });
       if (!response.ok) throw new Error('Failed to retry answer');
       await consumeAnswerStream(response);
     } catch {

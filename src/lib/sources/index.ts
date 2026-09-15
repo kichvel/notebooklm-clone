@@ -95,7 +95,7 @@ export async function createFileSource(
 
   const { data: source, error: sourceError } = await supabase
     .from('sources')
-    .insert({ notebook_id: notebookId, type, title: placeholderTitle })
+    .insert({ notebook_id: notebookId, type, title: placeholderTitle, original_filename: filename })
     .select()
     .single();
   if (sourceError) throw sourceError;

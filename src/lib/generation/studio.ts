@@ -81,12 +81,12 @@ export async function generateNextFlashcards(
   if (picked.status === 'exhausted') return picked;
   const cards = await generateFlashcards({
     system:
-      'Create two distinct study flashcards grounded ONLY in the passage below, each testing a different fact or concept from it. "front" is a question or prompt; "back" is the answer. Never use knowledge outside the passage. A document summary may be given only so you understand what the whole document covers — never cite it, quote it, or treat it as a source of facts; every flashcard must be answerable from the passage alone.',
+      'Create two distinct study flashcards grounded ONLY in the excerpt below, each testing a different fact or concept from it. "front" is a question or prompt; "back" is the answer. Phrase the question naturally, about the subject matter itself — never refer to "the excerpt," "the passage," or "the text" in the question or answer. Never use knowledge outside the excerpt. A document summary may be given only so you understand what the whole document covers — never cite it, quote it, or treat it as a source of facts; every flashcard must be answerable from the excerpt alone.',
     prompt: [
       picked.sourceSummary
         ? `Document summary (context only, not a source):\n${picked.sourceSummary}`
         : null,
-      `Passage:\n${picked.content}`,
+      `Excerpt:\n${picked.content}`,
     ]
       .filter(Boolean)
       .join('\n\n'),
@@ -115,12 +115,12 @@ export async function generateNextQuizQuestions(
   if (picked.status === 'exhausted') return picked;
   const questions = await generateQuizQuestions({
     system:
-      'Create two distinct multiple-choice questions, each with exactly 4 options, grounded ONLY in the passage below and testing different facts or concepts from it. Exactly one option per question is correct; the rest must be plausible but clearly wrong given the passage. Never use knowledge outside the passage. A document summary may be given only so you understand what the whole document covers — never cite it, quote it, or treat it as a source of facts; every question must be answerable from the passage alone.',
+      'Create two distinct multiple-choice questions, each with exactly 4 options, grounded ONLY in the excerpt below and testing different facts or concepts from it. Exactly one option per question is correct; the rest must be plausible but clearly wrong given the excerpt. Phrase each question naturally, about the subject matter itself — never refer to "the excerpt," "the passage," or "the text" in the question or its options. Never use knowledge outside the excerpt. A document summary may be given only so you understand what the whole document covers — never cite it, quote it, or treat it as a source of facts; every question must be answerable from the excerpt alone.',
     prompt: [
       picked.sourceSummary
         ? `Document summary (context only, not a source):\n${picked.sourceSummary}`
         : null,
-      `Passage:\n${picked.content}`,
+      `Excerpt:\n${picked.content}`,
     ]
       .filter(Boolean)
       .join('\n\n'),
