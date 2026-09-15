@@ -114,6 +114,16 @@ The trade-offs below explain the choices made during planning, not a claim that 
 
 **Revisit when:** User needs justify separate threads or richer imports, or measured polling load and latency justify realtime updates.
 
+## ADR-012 — Scope public-deployment guardrails to demo hygiene, not production security
+
+**Decision:** Before the public Vercel deployment, add a deployment-wide daily AI-call ceiling (kill switch), per-identity-and-per-IP rate limiting on notebook/source creation and chat via Upstash Redis, and baseline security response headers. Explicitly exclude CAPTCHA, Vercel Firewall/WAF configuration, IP reputation scoring, and dollar-denominated billing integration.
+
+**Rationale:** This is a take-home evaluation project, not a funded product; the goal is demonstrating engineering judgment about production AI cost and abuse concerns proportionate to the project's scope, not building attack-resistant infrastructure. Call-count is an adequate proxy for spend without adding a billing-API dependency. Anonymous identities can be recreated (ADR-003), so IP-based limiting backstops identity-based limiting without adding user friction.
+
+**Trade-offs:** A determined attacker with rotating IPs can still exceed intended usage before the global ceiling catches it; the ceiling, not per-identity limits, is the actual backstop. Call-count as a cost proxy ignores that requests have very different real costs (a pasted-text source is cheaper than a 10MB PDF). No CAPTCHA means scripted notebook/source creation is only slowed, not prevented, by rate limits.
+
+**Revisit when:** This moves beyond a demo/evaluation deployment toward sustained real usage, at which point per-request cost-weighted limits, real billing-API integration, and stronger bot resistance become proportionate.
+
 ## Maintaining this record
 
 Keep these decisions as the planning baseline. When implementation changes one, mark it superseded and link to a new record explaining the evidence and replacement. Record actual validation and development events retrospectively in DEVELOPMENT.md; do not turn planned outcomes into completed claims.
