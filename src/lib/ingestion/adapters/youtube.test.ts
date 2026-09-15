@@ -1,7 +1,11 @@
 // @vitest-environment node
 import { NonRetriableError } from 'inngest';
 import { describe, expect, it, vi } from 'vitest';
-import { YoutubeTranscript, YoutubeTranscriptDisabledError } from 'youtube-transcript';
+import {
+  YoutubeTranscript,
+  YoutubeTranscriptDisabledError,
+  YoutubeTranscriptNotAvailableLanguageError,
+} from 'youtube-transcript';
 import { extractVideoId, youtubeAdapter } from './youtube';
 
 vi.mock('youtube-transcript', async () => {
@@ -62,5 +66,30 @@ describe('youtubeAdapter', () => {
     });
 
     expect(blocks).toEqual([{ text: 'Intro line', startSeconds: 0 }]);
+    expect(YoutubeTranscript.fetchTranscript).toHaveBeenCalledExactlyOnceWith('abc123XYZ_-', {
+      lang: 'en',
+    });
+  });
+
+  it('falls back to a machine-translated transcript when there is no native English track', async () => {
+    vi.mocked(YoutubeTranscript.fetchTranscript)
+      .mockRejectedValueOnce(
+        new YoutubeTranscriptNotAvailableLanguageError('en', ['de'], 'abc123XYZ_-'),
+      )
+      .mockResolvedValueOnce([{ text: 'Translated line', offset: 0, duration: 2 }]);
+
+    const { blocks } = await youtubeAdapter.parse(undefined as never, {
+      sourceId: 'source-1',
+      storagePath: null,
+      originUrl: 'https://www.youtube.com/watch?v=abc123XYZ_-',
+    });
+
+    expect(blocks).toEqual([{ text: 'Translated line', startSeconds: 0 }]);
+    expect(YoutubeTranscript.fetchTranscript).toHaveBeenCalledTimes(2);
+    expect(YoutubeTranscript.fetchTranscript).toHaveBeenNthCalledWith(1, 'abc123XYZ_-', {
+      lang: 'en',
+    });
+    const secondCallConfig = vi.mocked(YoutubeTranscript.fetchTranscript).mock.calls[1][1];
+    expect(secondCallConfig?.fetch).toBeInstanceOf(Function);
   });
 });
