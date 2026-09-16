@@ -121,7 +121,7 @@ const FLASHCARDS_SCHEMA = {
         required: ['front', 'back'],
         additionalProperties: false,
       },
-      minItems: 2,
+      minItems: 0,
       maxItems: 2,
     },
   },
@@ -167,9 +167,11 @@ export async function generateFlashcards({
   const content = response.choices[0]?.message?.content;
   if (!content) return null;
   const parsed = JSON.parse(content) as { flashcards?: RawFlashcard[] };
-  if (!Array.isArray(parsed.flashcards) || parsed.flashcards.length !== 2) return null;
-  const cards = parsed.flashcards.filter(isValidFlashcard);
-  return cards.length === 2 ? cards : null;
+  if (!Array.isArray(parsed.flashcards)) return null;
+  // An empty array is the model correctly declining to invent a fact for a
+  // content-free excerpt (a heading, nav label, etc.) — same as "nothing usable
+  // here," so the caller retries with a different passage.
+  return parsed.flashcards.filter(isValidFlashcard);
 }
 
 const QUIZ_QUESTIONS_SCHEMA = {
@@ -187,7 +189,7 @@ const QUIZ_QUESTIONS_SCHEMA = {
         required: ['question', 'options', 'correctIndex'],
         additionalProperties: false,
       },
-      minItems: 2,
+      minItems: 0,
       maxItems: 2,
     },
   },
@@ -239,9 +241,11 @@ export async function generateQuizQuestions({
   const content = response.choices[0]?.message?.content;
   if (!content) return null;
   const parsed = JSON.parse(content) as { questions?: RawQuizQuestion[] };
-  if (!Array.isArray(parsed.questions) || parsed.questions.length !== 2) return null;
-  const questions = parsed.questions.filter(isValidQuizQuestion);
-  return questions.length === 2 ? questions : null;
+  if (!Array.isArray(parsed.questions)) return null;
+  // An empty array is the model correctly declining to invent a fact for a
+  // content-free excerpt (a heading, nav label, etc.) — same as "nothing usable
+  // here," so the caller retries with a different passage.
+  return parsed.questions.filter(isValidQuizQuestion);
 }
 
 // Thrown when the model run ends before producing a complete response (most commonly:
