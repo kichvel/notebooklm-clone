@@ -23,6 +23,33 @@ describe('chunkBlock', () => {
     expect(chunks[1].text).toBe('The Boeing 747 is a wide-body commercial jet airliner.');
   });
 
+  it('folds a headless dated heading forward into the entry it introduces, instead of publishing it alone', () => {
+    // Mirrors the corrected PDF layout reconstruction: the visual gap the resume uses
+    // to separate an entry's heading from its own bullets now becomes a real blank
+    // line, same as the gap between two different entries. Without this merge, the
+    // heading (which carries the employer name) and the bullets (which carry the
+    // actual work) end up in different chunks, so a question like "what did they do
+    // at Accenture" can't retrieve both together.
+    const heading =
+      '12.2023 – Present Management Analyst & Technical Consultant Accenture - Industry X, Munich';
+    const bullets =
+      '▪ Resident engineer supporting BMW next-generation electric vehicle platforms through ECU flashing, CAN trace analysis, and software debugging.';
+    const text = [heading, bullets].join('\n\n');
+
+    const chunks = chunkBlock({ text, page: 1 });
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].text).toBe(`${heading}\n${bullets}`);
+  });
+
+  it('does not merge two complete, independent paragraphs even when both are short', () => {
+    const text = ['First complete thought stands on its own.', 'Second one does too.'].join('\n\n');
+
+    const chunks = chunkBlock({ text, page: 1 });
+
+    expect(chunks).toHaveLength(2);
+  });
+
   it('splits a single blank-line-free block at line boundaries once it exceeds the target size', () => {
     // Mirrors a PDF page: many single-newline-separated lines, no blank lines at all.
     const lines = Array.from(
