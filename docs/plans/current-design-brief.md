@@ -1,43 +1,49 @@
-# Design Brief — Per-source intro generation, chat UX, and Studio framing
+# Design Brief — Public-deployment abuse guardrails
 
-**Goal:** Replace the one-shot, never-updating, whole-notebook intro with a per-source intro paragraph generated whenever a source finishes ingesting (including long after notebook creation), and reuse each source's summary as framing context for Studio's flashcard/quiz generation.
+**Goal:** Before the live Vercel deployment is shared publicly, add the minimum set of guardrails that prevent it from running up an unbounded OpenAI bill or being trivially spammed — sized for a take-home evaluation demo, not enterprise production.
 **Date:** 2026-09-15
 
 ## Shared understanding
-Today, `src/lib/generation/notebookIntro.ts` generates one title + one summary for the *whole notebook*, exactly once, gated by `notebooks.intro_generated_at` — later source additions never regenerate or extend it. It samples only the first 3 chunks per source (capped at 6000 chars total across the notebook), which produces summaries too shallow to give Studio's chunk-level flashcard/quiz generation any real document context (root cause of awkward questions like "Which programming languages are mentioned in the passage?"). We're splitting this into two independent one-shot-per-source and one-shot-per-notebook mechanisms: (1) every time a source reaches `ready`, generate a self-contained intro paragraph for *that source*, built from an evenly-spread sample across its *entire* chunk range (not just the start) so it actually represents the whole document, capped at a per-source character budget — a cheap representative sample, not full-document map-reduce coverage. That intro is inserted into the notebook's chat as its own message as soon as it's ready. Sources added/finishing together generate their intros in parallel and each lands in chat independently as it completes; the chat input stays blocked with a visible "generating…" indicator until every intro currently in flight is done. (2) Notebook title generation is fully decoupled — it stays the existing one-shot mechanism, gated by `notebooks.intro_generated_at`, firing once when the notebook's original first batch of sources all reach a terminal state, but no longer produces a summary or message. (3) Each source's persisted summary becomes framing context in Studio's flashcard/quiz prompts (`src/lib/generation/studio.ts`) — context only, never citable; every generated item still must cite a real passage, mirroring how conversation history is already treated in chat (ADR-005-style: aids interpretation, never a fact source).
+Sourcebook is a take-home project for an AI Full Stack Engineer role, about to be deployed live and publicly linked. The evaluation bar here is judgment and proportionality, not attack-resistance: the goal is to demonstrate awareness of production AI cost/abuse concerns without over-engineering a 7-day demo. Today the app has solid input-safety fundamentals already in place (server-enforced 10-sources/10MB-per-file limits in `src/app/api/notebooks/[notebookId]/sources/route.ts`, SSRF-hardened URL fetching in `src/lib/ingestion/url-safety.ts`, RLS-backed ownership isolation) but nothing stops total request volume or OpenAI spend from growing unbounded — there's no rate limiting, no shared counter store, no security headers, and per ADR-003 anonymous Supabase identities can be trivially recreated so identity-only limits aren't sufficient alone. We're adding four small, independent pieces: (1) a deployment-wide daily AI-spend kill switch that visibly blocks new AI-costing work once a conservative, env-configurable ceiling is hit — the one failure mode that could actually break the demo or the bill before a reviewer opens it; (2) lightweight rate limiting keyed on both the anonymous identity and the request IP (defense against identity recreation) on the endpoints that cost money — notebook creation, source creation, chat messages; (3) free security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy) since they cost nothing and are baseline hygiene; (4) a new ADR in `docs/DECISIONS.md`, matching the project's existing ADR format, explicitly recording this as a scoped "public demo hygiene" decision and naming what's deliberately excluded (CAPTCHA, WAF/bot scoring, ML-based fraud detection) so the trade-off reasoning itself is visible to a reviewer. No CAPTCHA or other user-facing friction — stays frictionless per the product's "useful before prompting" principle. Everything stays behind small, swappable interfaces consistent with the project's existing module boundaries; nothing here touches the anonymous-identity model, RLS, or the already-solid SSRF/file-size protections.
 
 ## Key decisions
-- New migration: `sources.intro_summary text`, `sources.intro_generated_at timestamptz` (per-source one-shot guard, same claim pattern as the existing notebook-level column: atomic `.update(...).is('intro_generated_at', null)`), and `messages.source_id uuid references sources(id) on delete set null` (nullable — regular chat messages have none; `set null` so an intro message survives its source being deleted later, matching the existing "deleting a source preserves prior answers" rule).
-- `notebookIntro.ts` stripped to title-only generation; no message insert, no summary, no follow-ups. Trigger condition (all of the *original* batch reaching terminal state) is unchanged.
-- New `src/lib/generation/sourceIntro.ts`: `maybeGenerateSourceIntro(supabase, sourceId)` — only for sources that reach `ready` (a `failed` source gets no intro, matching ADR-007's existing "no retry path" trade-off). Samples chunks at evenly-spaced indices across the source's full `chunk_index` range (not just the first N), joined up to a fixed per-source character budget, then one summary call ("clearly explain what this document is about") + `generateFollowUps` (reused as-is) + a `messages` insert with `source_id` set.
-- Triggered from `src/lib/ingestion/index.ts`'s per-source finalize step (alongside the existing, now title-only, notebook call) — not from the `onFailure` path, since only `ready` sources get intros.
-- Client polling (`notebook-workspace.tsx`) widens its "keep polling" condition to also cover "a ready source has no `intro_generated_at` yet," fixing a latent bug where polling could stop right before an in-flight intro lands, and doubling as the signal that drives the new blocking indicator.
-- Chat input blocking reuses the existing `asking`/"Thinking…" pattern in `chat-panel.tsx` structurally, but as a distinct state/label (e.g. "Summarizing new sources…") so the two are visually distinguishable; it does not block on ingestion itself, only on "ready but intro not yet generated."
-- `studio.ts`'s `selectNextPassage` fetches the passage's owning source's `intro_summary` alongside its existing title/type/origin_url lookup and threads it into the flashcard/quiz generation prompt as explicitly non-citable framing text; a missing/null summary (not yet generated, or generation failed) degrades gracefully — Studio generation is never blocked waiting on it.
+- New dependency: Upstash Redis (free tier) + `@upstash/ratelimit` — the leanest shared counter store that works across Vercel's serverless/edge invocations; nothing else is set up yet.
+- Rate limiting keys: `identity:<supabase-anon-user-id>` and `ip:<x-forwarded-for>`, checked together (request rejected if either is exceeded) — identity alone is insufficient since anon sessions can be recreated (ADR-003).
+- Global kill switch: one Redis counter per UTC day (`ai-spend:<date>`), incremented on each AI-costing call site (embeddings, generation, transcription, source/notebook summaries), compared against a conservative env-configurable ceiling (e.g. `AI_DAILY_CALL_CEILING`). Tracks call count as a cost proxy, not literal dollars — simple, no billing-API integration needed.
+- New small module `src/lib/abuse-prevention/` (naming to match existing `src/lib/<domain>/index.ts` convention) exposing `checkRateLimit(identity, ip, bucket)` and `checkGlobalCeiling()`, called from API routes before costly work starts. Kept separate from `providers/` since it's a cross-cutting request guard, not a model-provider concern.
+- Applied at the API route layer (notebook creation, source creation routes, message/chat route) rather than global `middleware.ts`, since limits differ per action type (e.g. source creation vs. chat has a different bucket/cost weight) and the checks need the authenticated identity, which route handlers already resolve.
+- When a limit is hit, return an actionable 429-style response with a clear message; the UI surfaces it using the existing error-display pattern (per product principle: failures are visible, not silent).
+- Security headers added via `next.config.ts` `headers()` — no new dependency.
+- Numeric defaults are conservative starting points documented in `.env.example` and the new ADR, tunable after watching real traffic — not treated as final/validated numbers.
 
 ## Constraints
-- Summaries are framing context only, never citable evidence (mirrors ADR-005 and the existing conversation-history-is-context-not-evidence rule).
-- OpenAI calls only through `src/lib/providers/` (ADR-006).
-- An intro message must survive its source's later deletion, consistent with the existing citation/answer-preservation rule for source deletion.
+- No added friction for legitimate users (no CAPTCHA, no verification step).
+- Does not modify RLS policies, the anonymous-identity model, or existing SSRF/file-size/source-count enforcement — those are already adequate.
+- OpenAI calls remain routed only through `src/lib/providers/` (ADR-006); the ceiling check wraps call sites, it doesn't reach into the provider module.
+- Must degrade visibly (explicit blocked/limited message), never silently drop or fail work.
 
 ## Out of scope
-- Full-document map-reduce summarization for arbitrarily long sources (capped representative sample instead).
-- Regenerating/updating an intro after it's first generated for a source.
-- Any change to chat's own answer-generation grounding or citation mechanics beyond the new blocking state.
+- CAPTCHA or any bot-verification step.
+- Vercel Firewall/WAF configuration, IP reputation, or ML-based abuse scoring.
+- Literal dollar-based billing integration (OpenAI usage API polling) — call-count is an adequate proxy for this scope.
+- Per-user account tiers, paid plans, or any authentication changes.
+- Redoing or extending the existing SSRF, file-size, or source-count protections.
 
 ## Success criteria
-- Adding a source to a notebook — the first ever, or the Nth after lots of prior chat — produces its own intro chat message once ingestion finishes, built from a sample spanning the whole document.
-- Adding multiple sources together produces multiple intros landing independently as each completes; chat input stays disabled with a visible indicator until all are done.
-- Notebook title is generated exactly once, from the original first batch, independent of per-source intro timing/content.
-- Flashcard/quiz prompts include the owning source's summary as context; every generated item still carries a real passage citation, never the summary.
-- Deleting a source leaves its intro message intact in chat history.
+- A scripted burst of requests (same identity or same IP) against notebook creation, source creation, or chat is visibly rejected with an actionable message once its bucket's limit is exceeded, without affecting other identities/IPs.
+- Once the daily AI-call ceiling is reached, new source ingestion and new chat questions are visibly refused (not silently queued or dropped) until the counter resets the next UTC day; already-in-flight work is unaffected.
+- Response headers on every page include CSP, `X-Frame-Options`, `X-Content-Type-Options`, and `Referrer-Policy`.
+- `docs/DECISIONS.md` has a new ADR describing this scope and its explicit exclusions, in the same rationale/trade-offs/revisit-when format as the existing records.
+- `npm run typecheck`, `npm run lint`, and `npm run test` remain green; no existing test's behavior changes.
 
 ## Expected files touched
-- `supabase/migrations/<new>.sql` — `sources.intro_summary`, `sources.intro_generated_at`, `messages.source_id`
-- `src/lib/generation/notebookIntro.ts` — strip to title-only
-- `src/lib/generation/sourceIntro.ts` (new) — per-source intro generation
-- `src/lib/ingestion/index.ts` — call the new per-source intro generation from the finalize step
-- `src/app/notebooks/[notebookId]/notebook-workspace.tsx` — widen polling condition; compute/pass a "generating intros" blocking state
-- `src/components/chat/chat-panel.tsx` — distinct blocking indicator for intro generation vs. answer generation
-- `src/lib/generation/studio.ts` — thread `intro_summary` into flashcard/quiz prompts as framing context
-- Relevant API routes/types that surface `sources` rows to the client — expose `intro_generated_at` (or a derived pending flag)
+- `src/lib/abuse-prevention/index.ts` (new) — rate limit + global ceiling checks, Upstash client
+- `src/lib/abuse-prevention/*.test.ts` (new) — unit tests for limit logic (mocked store)
+- `src/app/api/notebooks/route.ts` — rate limit on notebook creation
+- `src/app/api/notebooks/[notebookId]/sources/route.ts` — rate limit + ceiling check on source creation
+- `src/app/api/notebooks/[notebookId]/sources/website/route.ts`, `.../youtube/route.ts` — same
+- `src/app/api/notebooks/[notebookId]/messages/route.ts` — rate limit + ceiling check on chat
+- `next.config.ts` — security headers
+- `.env.example` — new Upstash + ceiling/limit env vars
+- `docs/DECISIONS.md` — new ADR
+- `package.json` — new `@upstash/ratelimit`, `@upstash/redis` dependencies
