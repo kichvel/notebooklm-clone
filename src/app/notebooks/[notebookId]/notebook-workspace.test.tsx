@@ -7,6 +7,14 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
 
+const { uploadMock } = vi.hoisted(() => ({ uploadMock: vi.fn() }));
+
+vi.mock('@/lib/supabase/client', () => ({
+  createClient: () => ({
+    storage: { from: () => ({ upload: uploadMock }) },
+  }),
+}));
+
 function jsonResponse(body: unknown) {
   return Promise.resolve({ ok: true, json: () => Promise.resolve(body) } as Response);
 }
@@ -226,6 +234,53 @@ describe('NotebookWorkspace', () => {
 
     await waitFor(() => expect(screen.queryAllByTestId('retry-answer')).toHaveLength(0));
     expect(screen.getAllByText('This is about cats.').length).toBeGreaterThan(0);
+  });
+
+  it('uploads files directly to storage before registering them, and merges upload failures with server-reported skips', async () => {
+    uploadMock
+      .mockResolvedValueOnce({ error: null })
+      .mockResolvedValueOnce({ error: { message: 'network error' } });
+
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (init?.method === 'POST' && url.endsWith('/sources')) {
+        return jsonResponse({
+          created: [{ id: 's1' }],
+          skipped: [{ filename: 'b.pdf', reason: 'File exceeds 50MB limit' }],
+        });
+      }
+      if (url.endsWith('/sources')) return jsonResponse([]);
+      if (url.endsWith('/messages')) return jsonResponse([]);
+      return jsonResponse({ id: 'n1', title: 'Untitled notebook' });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<NotebookWorkspace notebookId="n1" />);
+    const user = userEvent.setup();
+    const [addButton] = await screen.findAllByRole('button', { name: /add sources/i });
+    await user.click(addButton);
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const fileA = new File(['a'], 'a.pdf', { type: 'application/pdf' });
+    const fileC = new File(['c'], 'c.pdf', { type: 'application/pdf' });
+    await user.upload(fileInput, [fileA, fileC]);
+    await user.click(screen.getByRole('button', { name: /^add source$/i }));
+
+    await waitFor(() => {
+      const postCall = fetchMock.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.method === 'POST',
+      );
+      expect(postCall).toBeDefined();
+    });
+
+    const postCall = fetchMock.mock.calls.find(
+      ([, init]) => (init as RequestInit | undefined)?.method === 'POST',
+    )!;
+    const sentBody = JSON.parse((postCall[1] as RequestInit).body as string);
+    expect(sentBody.files).toEqual([{ id: expect.any(String), filename: 'a.pdf' }]);
+
+    expect(await screen.findByText(/c\.pdf \(upload failed\)/i)).toBeInTheDocument();
+    expect(await screen.findByText(/b\.pdf \(file exceeds 50mb limit\)/i)).toBeInTheDocument();
   });
 
   it('saves chat settings from the Configure Chat dialog', async () => {

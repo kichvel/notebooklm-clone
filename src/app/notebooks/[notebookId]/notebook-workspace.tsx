@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
 import { WorkspaceHeader } from '@/components/workspace/workspace-header';
 import { WorkspaceShell } from '@/components/workspace/workspace-shell';
 import { SourceList } from '@/components/sources/source-list';
@@ -103,7 +104,7 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sources]);
 
-  async function postSource(input: RequestInit) {
+  async function postSource(input: RequestInit, extraSkips: { filename: string; reason: string }[] = []) {
     setError(null);
     try {
       const response = await fetch(`/api/notebooks/${notebookId}/sources`, {
@@ -112,9 +113,10 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
       });
       if (!response.ok) throw new Error('Failed to add source');
       const body = await response.json();
-      if (Array.isArray(body?.skipped) && body.skipped.length > 0) {
+      const skipped = [...extraSkips, ...(Array.isArray(body?.skipped) ? body.skipped : [])];
+      if (skipped.length > 0) {
         setError(
-          `Some files were skipped: ${body.skipped.map((s: { filename: string; reason: string }) => `${s.filename} (${s.reason})`).join(', ')}`,
+          `Some files were skipped: ${skipped.map((s: { filename: string; reason: string }) => `${s.filename} (${s.reason})`).join(', ')}`,
         );
       }
       await refreshSources();
@@ -125,9 +127,34 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
   }
 
   async function handleAddFiles(files: FileList) {
-    const formData = new FormData();
-    for (const file of Array.from(files)) formData.append('files', file);
-    await postSource({ body: formData });
+    const supabase = createClient();
+    const registrations: { id: string; filename: string }[] = [];
+    const uploadSkips: { filename: string; reason: string }[] = [];
+
+    for (const file of Array.from(files)) {
+      const id = crypto.randomUUID();
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+      const { error } = await supabase.storage
+        .from('sources')
+        .upload(`${notebookId}/${id}/original.${ext}`, file);
+      if (error) {
+        uploadSkips.push({ filename: file.name, reason: 'Upload failed' });
+      } else {
+        registrations.push({ id, filename: file.name });
+      }
+    }
+
+    if (registrations.length === 0) {
+      setError(
+        `Some files were skipped: ${uploadSkips.map((s) => `${s.filename} (${s.reason})`).join(', ')}`,
+      );
+      return;
+    }
+
+    await postSource(
+      { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files: registrations }) },
+      uploadSkips,
+    );
   }
 
   async function handleAddWebsite(url: string) {
