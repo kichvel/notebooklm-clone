@@ -92,9 +92,13 @@ export async function createFileSource(
 
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
   const type = FILE_EXTENSION_TYPE[ext];
-  if (!type) throw new Error(`Unsupported file type: .${ext}`);
-
   const storagePath = `${notebookId}/${id}/original.${ext}`;
+
+  if (!type) {
+    await supabase.storage.from('sources').remove([storagePath]);
+    throw new Error(`Unsupported file type: .${ext}`);
+  }
+
   const { data: info, error: infoError } = await supabase.storage.from('sources').info(storagePath);
   if (infoError || !info) throw new Error('Uploaded file was not found in storage');
 

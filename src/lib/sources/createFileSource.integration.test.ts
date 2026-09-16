@@ -79,11 +79,14 @@ describe.skipIf(!hasRealEnv)('createFileSource', () => {
       .single();
     createdNotebookIds.push(notebook!.id);
 
-    const { id } = await uploadTestFile(user, notebook!.id, 'exe', new Blob(['irrelevant']));
+    const { id, storagePath } = await uploadTestFile(user, notebook!.id, 'exe', new Blob(['irrelevant']));
 
     await expect(
       createFileSource(user, { notebookId: notebook!.id, id, filename: 'notes.exe' }),
     ).rejects.toThrow(/unsupported file type/i);
+
+    const { data: stillThere } = await user.storage.from('sources').info(storagePath);
+    expect(stillThere).toBeNull();
   }, 30000);
 
   it('rejects registration when no object was uploaded at the expected path', async () => {
