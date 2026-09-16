@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { ClipboardIcon, LinkIcon, PlusIcon, UploadIcon, VideoIcon } from 'lucide-react';
+import { ClipboardIcon, LinkIcon, PlusIcon, UploadIcon } from 'lucide-react';
 import { cn } from 'cn';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,26 +14,23 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 
-type Mode = 'files' | 'website' | 'youtube' | 'text';
+type Mode = 'files' | 'website' | 'text';
 
 const MODES: { id: Mode; label: string; icon: typeof UploadIcon }[] = [
   { id: 'files', label: 'Upload files', icon: UploadIcon },
   { id: 'website', label: 'Website', icon: LinkIcon },
-  { id: 'youtube', label: 'YouTube', icon: VideoIcon },
   { id: 'text', label: 'Copied text', icon: ClipboardIcon },
 ];
 
 export interface AddSourceDialogProps {
   onAddFiles: (files: FileList) => Promise<void>;
   onAddWebsite: (url: string) => Promise<void>;
-  onAddYoutube: (url: string) => Promise<void>;
   onAddText: (text: string) => Promise<void>;
 }
 
 export function AddSourceDialog({
   onAddFiles,
   onAddWebsite,
-  onAddYoutube,
   onAddText,
 }: AddSourceDialogProps) {
   const [open, setOpen] = useState(false);
@@ -69,9 +66,6 @@ export function AddSourceDialog({
       } else if (mode === 'website') {
         if (!url) throw new Error('Enter a URL');
         await onAddWebsite(url);
-      } else if (mode === 'youtube') {
-        if (!url) throw new Error('Enter a URL');
-        await onAddYoutube(url);
       } else {
         if (!text) throw new Error('Paste some text');
         await onAddText(text);
@@ -168,21 +162,6 @@ export function AddSourceDialog({
               type="url"
               required
             />
-          )}
-
-          {mode === 'youtube' && (
-            <div className="flex flex-col gap-2">
-              <p className="text-xs text-muted-foreground">
-                Only YouTube videos with captions/transcripts available can be added as a source.
-              </p>
-              <Input
-                value={url}
-                onChange={(event) => setUrl(event.target.value)}
-                placeholder="Paste a YouTube link"
-                type="url"
-                required
-              />
-            </div>
           )}
 
           {mode === 'text' && (

@@ -173,22 +173,6 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     }
   }
 
-  async function handleAddYoutube(url: string) {
-    setError(null);
-    try {
-      const response = await fetch(`/api/notebooks/${notebookId}/sources/youtube`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
-      });
-      if (!response.ok) throw new Error('Failed to add YouTube source');
-      await refreshSources();
-    } catch (err) {
-      setError('Something went wrong adding that source. Please try again.');
-      throw err;
-    }
-  }
-
   async function handleAddText(text: string) {
     await postSource({
       headers: { 'Content-Type': 'application/json' },
@@ -347,7 +331,6 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
       <AddSourceDialog
         onAddFiles={handleAddFiles}
         onAddWebsite={handleAddWebsite}
-        onAddYoutube={handleAddYoutube}
         onAddText={handleAddText}
       />
       {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
