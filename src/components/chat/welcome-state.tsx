@@ -2,7 +2,7 @@
 
 import { Skeleton } from '@/components/ui/skeleton';
 
-export function WelcomeState({ hasProcessingSources }: { hasProcessingSources: boolean }) {
+export function WelcomeState({ isBusyWithSources }: { isBusyWithSources: boolean }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-16 text-center">
       <span className="text-3xl" aria-hidden>
@@ -13,7 +13,7 @@ export function WelcomeState({ hasProcessingSources }: { hasProcessingSources: b
         Add sources, then ask a question to get grounded, cited answers.
       </p>
 
-      {hasProcessingSources && (
+      {isBusyWithSources && (
         <div className="flex w-full max-w-sm flex-col gap-2">
           <Skeleton className="h-9 w-full rounded-full" />
           <Skeleton className="h-9 w-3/4 self-center rounded-full" />

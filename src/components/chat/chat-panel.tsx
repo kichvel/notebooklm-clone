@@ -106,7 +106,7 @@ export function ChatPanel({
       </div>
       <div className="flex-1 overflow-x-hidden overflow-y-auto">
         {messages.length === 0 && !asking ? (
-          <WelcomeState hasProcessingSources={hasProcessingSources} />
+          <WelcomeState isBusyWithSources={isBusyWithSources} />
         ) : (
           <ul className="flex flex-col gap-4 p-4">
             {messages.map((message) => (
