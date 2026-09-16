@@ -19,6 +19,20 @@ describe('isNotebookOverviewQuestion', () => {
     expect(isNotebookOverviewQuestion('  WHAT ARE THE SOURCES ABOUT?  ')).toBe(true);
   });
 
+  it('recognizes a scope clause inserted mid-sentence, not just appended at the end', () => {
+    // Reported live: this exact phrasing missed the original pattern set because "in this
+    // notebook" sat between "sources" and "about" instead of after "about".
+    expect(isNotebookOverviewQuestion('what are the sources in this notebook about?')).toBe(true);
+    expect(isNotebookOverviewQuestion('What are the sources in this notebook about?')).toBe(true);
+    expect(
+      isNotebookOverviewQuestion('summarize the contents of all sources in this notebook'),
+    ).toBe(true);
+    expect(isNotebookOverviewQuestion('what do the sources in the notebook cover?')).toBe(true);
+    expect(isNotebookOverviewQuestion('give me a summary of the sources in this notebook')).toBe(
+      true,
+    );
+  });
+
   it('does not match ordinary factual questions that merely mention "sources"', () => {
     expect(
       isNotebookOverviewQuestion('Can you tell me about the risks mentioned in the sources?'),
