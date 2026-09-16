@@ -14,19 +14,19 @@ The architecture is deliberately kept simple and easy to follow: two linear pipe
 - **Provider adapter** — all embedding, generation, and transcription calls go through one adapter interface, so the application logic doesn't depend on which model or vendor sits behind it (currently OpenAI).
 
 ```mermaid
-%%{init: {"flowchart": {"nodeSpacing": 30, "rankSpacing": 55, "curve": "linear"}}}%%
+%%{init: {"flowchart": {"nodeSpacing": 70, "rankSpacing": 55, "curve": "linear"}}}%%
 flowchart TB
     UI["Next.js + TypeScript<br/>UI, chat, citation viewer"]
     Auth[["Supabase Auth<br/>anonymous identity"]]
     UI --> Auth
 
     UI -- "upload source" --> I1
-    subgraph Ingest["Ingestion — one durable Inngest workflow per source"]
+    subgraph Ingest["Ingestion (per source)"]
         I1["Parse /<br/>Transcribe"] --> I2["Normalize"] --> I3["Chunk"] --> I4["Embed"] --> I5["Finalize &<br/>Store"]
     end
 
     UI -- "ask question" --> Q1
-    subgraph QA["Question answering — per chat message"]
+    subgraph QA["Question answering (per message)"]
         Q1["Query<br/>Processing"] --> Q2["Retrieval"] --> Q3["Context<br/>Assembly"] --> Q4["Generation"] --> Q5["Citation<br/>Validation"]
     end
 
