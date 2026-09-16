@@ -70,6 +70,32 @@ describe('checkGlobalCeiling', () => {
   });
 });
 
+describe('failing open when Redis itself errors', () => {
+  afterEach(() => {
+    store.clear();
+    incr.mockReset().mockImplementation(async (key: string) => {
+      const next = (store.get(key) ?? 0) + 1;
+      store.set(key, next);
+      return next;
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('does not throw from checkRateLimit when the store is unreachable', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    incr.mockRejectedValue(new Error('Failed to parse URL from /pipeline'));
+
+    await expect(checkRateLimit('notebookCreate', 'user-3', '9.9.9.9')).resolves.toBeUndefined();
+  });
+
+  it('does not throw from checkGlobalCeiling when the store is unreachable', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    incr.mockRejectedValue(new Error('Failed to parse URL from /pipeline'));
+
+    await expect(checkGlobalCeiling()).resolves.toBeUndefined();
+  });
+});
+
 describe('getClientIp', () => {
   it('reads the first address from x-forwarded-for', () => {
     const request = new Request('http://x', {
