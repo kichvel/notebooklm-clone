@@ -1,6 +1,7 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { generate } from '@/lib/providers/openai';
+import { sampleAcrossSources } from '@/lib/retrieval';
 
 const MAX_CHUNKS_PER_SOURCE = 3;
 const MAX_SAMPLE_CHARS = 6000;
@@ -27,15 +28,18 @@ export async function maybeGenerateNotebookTitle(
   const readySourceIds = sources.filter((s) => s.status === 'ready').map((s) => s.id);
   if (!allTerminal || readySourceIds.length === 0) return;
 
+  const sampledChunks = await sampleAcrossSources(supabase, {
+    notebookId,
+    sourceIds: readySourceIds,
+    chunksPerSource: MAX_CHUNKS_PER_SOURCE,
+  });
   const samples: string[] = [];
   for (const sourceId of readySourceIds) {
-    const { data: chunks } = await supabase
-      .from('source_chunks')
-      .select('content')
-      .eq('source_id', sourceId)
-      .order('chunk_index')
-      .limit(MAX_CHUNKS_PER_SOURCE);
-    if (chunks && chunks.length > 0) samples.push(chunks.map((c) => c.content).join('\n'));
+    const text = sampledChunks
+      .filter((c) => c.sourceId === sourceId)
+      .map((c) => c.content)
+      .join('\n');
+    if (text) samples.push(text);
   }
   const sample = samples.join('\n\n').slice(0, MAX_SAMPLE_CHARS);
   if (!sample.trim()) return;

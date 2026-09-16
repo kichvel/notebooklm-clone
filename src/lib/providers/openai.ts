@@ -244,6 +244,17 @@ export async function generateQuizQuestions({
   return questions.length === 2 ? questions : null;
 }
 
+// Thrown when the model run ends before producing a complete response (most commonly:
+// reasoning consumed the entire max_output_tokens budget before any answer text was emitted).
+// Kept distinct from a hard provider failure so callers can surface a specific, retryable
+// message instead of a generic error.
+export class GenerationIncompleteError extends Error {
+  constructor(reason: string) {
+    super(`Generation ended before finishing (${reason})`);
+    this.name = 'GenerationIncompleteError';
+  }
+}
+
 export async function* generateStreaming({
   system,
   prompt,
@@ -268,7 +279,9 @@ export async function* generateStreaming({
       yield { type: 'reasoning', text: event.delta };
     } else if (event.type === 'response.output_text.delta') {
       yield { type: 'answer', text: event.delta };
-    } else if (event.type === 'response.failed' || event.type === 'response.incomplete') {
+    } else if (event.type === 'response.incomplete') {
+      throw new GenerationIncompleteError(event.response.incomplete_details?.reason ?? 'unknown');
+    } else if (event.type === 'response.failed') {
       throw new Error(`Generation ${event.type}`);
     }
   }

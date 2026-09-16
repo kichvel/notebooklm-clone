@@ -104,7 +104,10 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sources]);
 
-  async function postSource(input: RequestInit, extraSkips: { filename: string; reason: string }[] = []) {
+  async function postSource(
+    input: RequestInit,
+    extraSkips: { filename: string; reason: string }[] = [],
+  ) {
     setError(null);
     try {
       const response = await fetch(`/api/notebooks/${notebookId}/sources`, {
@@ -152,7 +155,10 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
     }
 
     await postSource(
-      { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ files: registrations }) },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: registrations }),
+      },
       uploadSkips,
     );
   }
@@ -204,9 +210,10 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
   async function consumeAnswerStream(
     response: Response,
     onDone?: () => void | Promise<void>,
-  ): Promise<boolean> {
+  ): Promise<{ sawError: boolean; errorMessage?: string }> {
     if (!response.body) throw new Error('Failed to generate an answer');
     let sawError = false;
+    let errorMessage: string | undefined;
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -235,10 +242,11 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
           await onDone?.();
         } else if (event.type === 'error') {
           sawError = true;
+          errorMessage = event.message;
         }
       }
     }
-    return sawError;
+    return { sawError, errorMessage };
   }
 
   async function submitQuestion(text: string) {
@@ -273,17 +281,25 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
         body: JSON.stringify({ question: text, sourceIds: [...selectedSourceIds] }),
       });
       if (!response.ok) throw new Error('Failed to ask question');
-      const sawError = await consumeAnswerStream(response, async () => {
+      const { sawError, errorMessage } = await consumeAnswerStream(response, async () => {
         await refreshMessages();
         setAsking(false);
         setStreaming(null);
       });
-      if (sawError) throw new Error('Failed to generate an answer');
+      if (sawError) throw new Error(errorMessage ?? 'Failed to generate an answer');
       setQuestion('');
       await refreshMessages();
-    } catch {
+    } catch (err) {
       setMessages((current) => current.filter((message) => message.id !== optimisticId));
-      setAskError('Something went wrong asking that question. Please try again.');
+      // The question and a 'failed' assistant message (with its own retry affordance) are
+      // already persisted server-side even when generation errors out — refresh so they
+      // become visible instead of the question silently disappearing from the transcript.
+      await refreshMessages();
+      setAskError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Something went wrong asking that question. Please try again.',
+      );
     } finally {
       setAsking(false);
       setStreaming(null);
@@ -310,14 +326,19 @@ export function NotebookWorkspace({ notebookId }: { notebookId: string }) {
         method: 'POST',
       });
       if (!response.ok) throw new Error('Failed to retry answer');
-      await consumeAnswerStream(response, async () => {
+      const { sawError, errorMessage } = await consumeAnswerStream(response, async () => {
         await refreshMessages();
         setAsking(false);
         setStreaming(null);
         setRetryingMessageId(null);
       });
-    } catch {
-      setAskError('Something went wrong retrying that answer. Please try again.');
+      if (sawError) throw new Error(errorMessage ?? 'Failed to generate an answer');
+    } catch (err) {
+      setAskError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Something went wrong retrying that answer. Please try again.',
+      );
     } finally {
       await refreshMessages();
       setAsking(false);

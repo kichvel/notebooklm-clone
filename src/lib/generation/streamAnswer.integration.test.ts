@@ -171,7 +171,10 @@ describe.skipIf(!hasRealEnv)('streamAnswer', () => {
       .from('source_chunks')
       .insert({ source_id: source!.id, chunk_index: 0, content: text, embedding });
 
-    const first = streamAnswer(user, { notebookId: notebook!.id, question: 'What is the Great Wall?' });
+    const first = streamAnswer(user, {
+      notebookId: notebook!.id,
+      question: 'What is the Great Wall?',
+    });
     await first.next(); // starts generation, claims the lease
 
     const second = streamAnswer(user, {
@@ -292,4 +295,168 @@ describe.skipIf(!hasRealEnv)('streamAnswer', () => {
     const followUpAnswer = followUpDone.result.answer.toLowerCase();
     expect(followUpAnswer).toMatch(/beta|data analyst/);
   }, 90000);
+
+  describe('notebook-overview questions', () => {
+    // Regression coverage for a prod bug: a notebook with one large, heavily-chunked source
+    // alongside several small single-chunk sources. Plain top-8 similarity search over a vague
+    // overview question let the big source's chunks crowd out the others entirely, and the
+    // model then described those chunks as if each were its own "source". A broad "summarize
+    // everything" question also intermittently hard-errored because reasoning could consume the
+    // whole output-token budget before any answer text was produced.
+    async function makeUnevenNotebook(user: Awaited<ReturnType<typeof createPrimaryTestClient>>) {
+      const { data: notebook, error: notebookError } = await user
+        .from('notebooks')
+        .insert({ title: 'Overview regression notebook' })
+        .select()
+        .single();
+      expect(notebookError).toBeNull();
+      createdNotebookIds.push(notebook!.id);
+
+      const { data: bigSource } = await user
+        .from('sources')
+        .insert({
+          notebook_id: notebook!.id,
+          type: 'pdf',
+          title: 'NVIDIA 10-K and governance filing',
+          status: 'ready',
+        })
+        .select()
+        .single();
+      const { data: audioSource } = await user
+        .from('sources')
+        .insert({
+          notebook_id: notebook!.id,
+          type: 'audio',
+          title: 'Board meeting recording',
+          status: 'ready',
+        })
+        .select()
+        .single();
+      const { data: docxSource } = await user
+        .from('sources')
+        .insert({
+          notebook_id: notebook!.id,
+          type: 'docx',
+          title: 'Climate risk memo',
+          status: 'ready',
+        })
+        .select()
+        .single();
+      const { data: websiteSource } = await user
+        .from('sources')
+        .insert({
+          notebook_id: notebook!.id,
+          type: 'website',
+          title: 'NASA topic explorer',
+          status: 'ready',
+        })
+        .select()
+        .single();
+
+      const bigChunks = [
+        'NVIDIA describes an open, full-stack platform for the enterprise agent lifecycle, including the Agent Toolkit, NeMo, NIM, and Nemotron.',
+        'The board committee charter enumerates audit-, risk-, and governance-related responsibilities including information security and enterprise risk management.',
+        'The Form 10-K table of contents lists Part I items: Business, Risk Factors, Unresolved Staff Comments, Cybersecurity, Properties, and Legal Proceedings.',
+        "NVIDIA's official disclosure channels include its investor relations site, SEC filings, earnings webcasts, and social media accounts.",
+        'An outline of board-level oversight areas covers Industry & Technical, Financial Governance, and Emerging Technologies & Business Models.',
+        'Modern AI foundation models increasingly understand specialized domains such as biology, chemistry, physics, finance, and medicine.',
+      ];
+      const audioChunk =
+        'In the recorded board meeting, members discussed quarterly compliance training completion rates.';
+      const docxChunk =
+        'The climate risk memo covers semiconductor supply-chain exposure to extreme weather and AI data-center energy demand.';
+      const websiteChunk =
+        "NASA's topic explorer page links out to articles on solar system exploration and climate change.";
+
+      const allTexts = [...bigChunks, audioChunk, docxChunk, websiteChunk];
+      const embeddings = await Promise.all(allTexts.map((t) => embed(t)));
+
+      const rows = [
+        ...bigChunks.map((content, i) => ({
+          source_id: bigSource!.id,
+          chunk_index: i,
+          content,
+          embedding: embeddings[i],
+        })),
+        {
+          source_id: audioSource!.id,
+          chunk_index: 0,
+          content: audioChunk,
+          embedding: embeddings[bigChunks.length],
+        },
+        {
+          source_id: docxSource!.id,
+          chunk_index: 0,
+          content: docxChunk,
+          embedding: embeddings[bigChunks.length + 1],
+        },
+        {
+          source_id: websiteSource!.id,
+          chunk_index: 0,
+          content: websiteChunk,
+          embedding: embeddings[bigChunks.length + 2],
+        },
+      ];
+      const { error: chunksError } = await user.from('source_chunks').insert(rows);
+      expect(chunksError).toBeNull();
+
+      return {
+        notebookId: notebook!.id as string,
+        sourceIds: [bigSource!.id, audioSource!.id, docxSource!.id, websiteSource!.id] as string[],
+      };
+    }
+
+    it('samples every source, not just the biggest one, for "What are the sources about?"', async () => {
+      const user = await createPrimaryTestClient();
+      const { notebookId, sourceIds } = await makeUnevenNotebook(user);
+
+      const events: AskQuestionEvent[] = [];
+      for await (const event of streamAnswer(user, {
+        notebookId,
+        question: 'What are the sources about?',
+      })) {
+        events.push(event);
+      }
+
+      const passagesEvent = events.find((e) => e.type === 'passages');
+      if (passagesEvent?.type !== 'passages') throw new Error('expected passages event');
+      const retrievedSourceIds = new Set(passagesEvent.citations.map((c) => c.sourceId));
+      // Every one of the 4 sources should be represented, not just the heavily-chunked one.
+      for (const sourceId of sourceIds) {
+        expect(retrievedSourceIds.has(sourceId)).toBe(true);
+      }
+
+      const done = events.find((e) => e.type === 'done');
+      if (done?.type !== 'done') throw new Error('expected done event');
+      expect(done.result.status).toBe('complete');
+      // The prompt explicitly tells the model there are 4 sources; it should reflect that
+      // instead of treating each of the (many more) passages as its own source.
+      expect(done.result.answer).toMatch(/\b(?:4|four)\b[^.]{0,30}sources?/i);
+    }, 60000);
+
+    it('does not error on "Summarize the contents of all sources in this notebook."', async () => {
+      const user = await createPrimaryTestClient();
+      const { notebookId } = await makeUnevenNotebook(user);
+
+      const events: AskQuestionEvent[] = [];
+      for await (const event of streamAnswer(user, {
+        notebookId,
+        question: 'Summarize the contents of all sources in this notebook.',
+      })) {
+        events.push(event);
+      }
+
+      expect(events.some((e) => e.type === 'error')).toBe(false);
+      const done = events.find((e) => e.type === 'done');
+      if (done?.type !== 'done') throw new Error('expected done event');
+      expect(done.result.status).toBe('complete');
+
+      const { data: persistedMessage } = await user
+        .from('messages')
+        .select('status')
+        .eq('id', done.result.messageId)
+        .single();
+      expect(persistedMessage?.status).toBe('complete');
+    }, 60000);
+  });
 });

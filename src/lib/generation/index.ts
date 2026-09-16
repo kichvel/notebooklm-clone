@@ -1,11 +1,26 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { embed, generateStreaming, REASONING_GENERATION_MODEL } from '@/lib/providers/openai';
-import { search } from '@/lib/retrieval';
+import {
+  embed,
+  generateStreaming,
+  GenerationIncompleteError,
+  REASONING_GENERATION_MODEL,
+} from '@/lib/providers/openai';
+import { search, sampleAcrossSources, type SourceSample } from '@/lib/retrieval';
 import { generateFollowUps } from './followUps';
 import { fetchRecentMessages, rewriteFollowUpQuery } from './rewriteQuery';
 import { claimGenerationLease, releaseGenerationLease } from './lease';
+import { isNotebookOverviewQuestion } from './overviewIntent';
 import type { ChatSettings } from '@/lib/notebooks/chatSettings';
+
+// Balanced per-source sampling for a notebook-overview question: enough chunks per source to
+// give a real sense of its content without one large source dwarfing everything else the way
+// an unrestricted similarity search does.
+const OVERVIEW_CHUNKS_PER_SOURCE = 3;
+// Broad "summarize everything" answers need materially more room than a narrow factual answer —
+// reasoning alone can otherwise consume the entire default budget before any answer text is
+// emitted (see GenerationIncompleteError).
+const OVERVIEW_MAX_OUTPUT_TOKENS = 4096;
 
 export { NotebookBusyError } from './lease';
 
@@ -61,19 +76,66 @@ const LENGTH_INSTRUCTIONS: Record<ChatSettings['chatAnswerLength'], string> = {
     'Answer comprehensively and in detail: explore the topic thoroughly, using multiple paragraphs or sections as warranted by the passages.',
 };
 
-export function buildSystemPrompt(passageCount: number, chatSettings: ChatSettings): string {
+export interface SourceContext {
+  sourceCount: number;
+  sourceTitles: string[];
+}
+
+export function buildSystemPrompt(
+  passageCount: number,
+  chatSettings: ChatSettings,
+  sourceContext?: SourceContext,
+): string {
   const lines = [
     `You answer questions using ONLY the numbered passages below as evidence. Passages are numbered [1] through [${passageCount}].`,
+  ];
+  if (sourceContext) {
+    const { sourceCount, sourceTitles } = sourceContext;
+    const plural = sourceCount === 1 ? '' : 's';
+    lines.push(
+      `These ${passageCount} passages are grouped by source and drawn from exactly ${sourceCount} source${plural} in this notebook: ${sourceTitles.map((t) => `"${t}"`).join(', ')}. Multiple passages can and do come from the same source — passages are NOT sources. When describing what the notebook contains, refer to its ${sourceCount} source${plural} by name, never by counting passages.`,
+    );
+  }
+  lines.push(
     'Cite every factual claim with the passage number(s) it is drawn from, in square brackets, e.g. "Cats are mammals [1]."',
     'Never use knowledge outside the passages.',
     'Conversation history, if provided, is only to help you understand references and intent in the current question (e.g. pronouns, "that", implicit comparisons) — never use it as a source of facts; facts must still come only from the numbered passages.',
     `If the passages do not contain enough information to answer, write exactly this text as your answer: "${REFUSAL_TEXT}"`,
     LENGTH_INSTRUCTIONS[chatSettings.chatAnswerLength],
-  ];
+  );
   if (chatSettings.chatStyle === 'custom' && chatSettings.chatCustomStyle) {
     lines.push(`Adopt this conversational goal, style, or role: ${chatSettings.chatCustomStyle}`);
   }
   return lines.join('\n');
+}
+
+// Groups passages under their source's title so the model sees source boundaries explicitly,
+// rather than a flat numbered list it could mistake for one passage per source.
+function buildGroupedPassagesBlock(
+  results: SourceSample[],
+  sourceById: Map<string, { title: string }>,
+): string {
+  const sourceOrder: string[] = [];
+  const bySource = new Map<string, SourceSample[]>();
+  for (const r of results) {
+    if (!bySource.has(r.sourceId)) {
+      bySource.set(r.sourceId, []);
+      sourceOrder.push(r.sourceId);
+    }
+    bySource.get(r.sourceId)!.push(r);
+  }
+  const labelByChunkId = new Map(results.map((r, i) => [r.chunkId, i + 1]));
+
+  return sourceOrder
+    .map((sourceId, i) => {
+      const title = sourceById.get(sourceId)?.title ?? 'Untitled source';
+      const passageLines = bySource
+        .get(sourceId)!
+        .map((r) => `  [${labelByChunkId.get(r.chunkId)}] ${r.content}`)
+        .join('\n\n');
+      return `Source ${i + 1}/${sourceOrder.length}: "${title}"\n${passageLines}`;
+    })
+    .join('\n\n');
 }
 
 async function finalizeAsRefused(
@@ -202,15 +264,25 @@ async function* runGeneration(
   let generated = '';
   try {
     const history = await fetchRecentMessages(supabase, notebookId);
-    const retrievalQuestion = await rewriteFollowUpQuery(history, question);
+    const overviewIntent = isNotebookOverviewQuestion(question);
 
-    const queryEmbedding = await embed(retrievalQuestion);
-    const results = await search(supabase, {
-      notebookId,
-      sourceIds,
-      queryEmbedding,
-      matchCount: 8,
-    });
+    let results: SourceSample[];
+    if (overviewIntent) {
+      results = await sampleAcrossSources(supabase, {
+        notebookId,
+        sourceIds,
+        chunksPerSource: OVERVIEW_CHUNKS_PER_SOURCE,
+      });
+    } else {
+      const retrievalQuestion = await rewriteFollowUpQuery(history, question);
+      const queryEmbedding = await embed(retrievalQuestion);
+      results = await search(supabase, {
+        notebookId,
+        sourceIds,
+        queryEmbedding,
+        matchCount: 8,
+      });
+    }
     if (results.length === 0) {
       yield { type: 'done', result: await finalizeAsRefused(supabase, { messageId, attemptId }) };
       return;
@@ -256,8 +328,18 @@ async function* runGeneration(
       chatAnswerLength: notebook.chat_answer_length,
     };
 
-    const system = buildSystemPrompt(results.length, chatSettings);
-    const passagesBlock = results.map((r, i) => `[${i + 1}] ${r.content}`).join('\n\n');
+    const sourceContext: SourceContext | undefined = overviewIntent
+      ? {
+          sourceCount: selectedSourceIds.length,
+          sourceTitles: selectedSourceIds.map(
+            (id) => (sourceById.get(id)?.title as string) ?? 'Untitled source',
+          ),
+        }
+      : undefined;
+    const system = buildSystemPrompt(results.length, chatSettings, sourceContext);
+    const passagesBlock = overviewIntent
+      ? buildGroupedPassagesBlock(results, sourceById)
+      : results.map((r, i) => `[${i + 1}] ${r.content}`).join('\n\n');
     const historyBlock =
       history.length > 0
         ? `Conversation so far:\n${history
@@ -269,6 +351,7 @@ async function* runGeneration(
       system,
       prompt: `${historyBlock}Passages:\n${passagesBlock}\n\nQuestion: ${question}`,
       model: REASONING_GENERATION_MODEL,
+      ...(overviewIntent ? { maxOutputTokens: OVERVIEW_MAX_OUTPUT_TOKENS } : {}),
     })) {
       if (chunk.type === 'reasoning') {
         reasoning += chunk.text;
@@ -354,7 +437,18 @@ async function* runGeneration(
       .eq('id', messageId)
       .eq('attempt_id', attemptId);
     console.error('generation attempt failed', { messageId, attemptId, err });
-    yield { type: 'error', message: 'Failed to generate an answer' };
+    // A GenerationIncompleteError means the model run was cut off (most often: reasoning
+    // consumed the whole output-token budget before any answer text was produced) rather than
+    // a hard provider/DB failure — surface a specific, retryable message instead of a generic
+    // one. The message is already persisted as 'failed' above, so the retry affordance works
+    // the same way for both cases; this only changes what the user is told went wrong.
+    yield {
+      type: 'error',
+      message:
+        err instanceof GenerationIncompleteError
+          ? 'The answer was cut off before it finished. You can retry to try again.'
+          : 'Failed to generate an answer',
+    };
   }
 }
 
