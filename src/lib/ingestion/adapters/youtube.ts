@@ -54,14 +54,22 @@ export const youtubeAdapter: SourceAdapter = {
         err instanceof YoutubeTranscriptDisabledError ||
         err instanceof YoutubeTranscriptNotAvailableError
       ) {
-        throw new NonRetriableError('This video has no available transcript');
+        // Not distinguishable from here: YouTube returns the same "no caption tracks"
+        // response both for videos that genuinely lack captions and when it blocks our
+        // server's IP. Retriable (not NonRetriableError) so Inngest's backoff gives a
+        // blocked request a few spaced-out attempts instead of failing permanently on one.
+        throw new Error(
+          "Couldn't retrieve a transcript for this video. It may not have captions, or automated access may be temporarily blocked.",
+        );
       }
       throw err;
     }
 
     const blocks = groupTimedItemsIntoBlocks(cues.map((c) => ({ start: c.offset, text: c.text })));
     if (blocks.length === 0) {
-      throw new NonRetriableError('This video has no available transcript');
+      throw new Error(
+        "Couldn't retrieve a transcript for this video. It may not have captions, or automated access may be temporarily blocked.",
+      );
     }
 
     return { blocks };

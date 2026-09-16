@@ -28,30 +28,32 @@ describe('extractVideoId', () => {
 });
 
 describe('youtubeAdapter', () => {
-  it('throws a non-retriable error when captions are disabled', async () => {
+  it('throws a retriable error (not NonRetriableError) when captions are disabled', async () => {
     vi.mocked(YoutubeTranscript.fetchTranscript).mockRejectedValue(
       new YoutubeTranscriptDisabledError('abc123XYZ_-'),
     );
 
-    await expect(
-      youtubeAdapter.parse(undefined as never, {
-        sourceId: 'source-1',
-        storagePath: null,
-        originUrl: 'https://www.youtube.com/watch?v=abc123XYZ_-',
-      }),
-    ).rejects.toThrow(NonRetriableError);
+    const call = youtubeAdapter.parse(undefined as never, {
+      sourceId: 'source-1',
+      storagePath: null,
+      originUrl: 'https://www.youtube.com/watch?v=abc123XYZ_-',
+    });
+
+    await expect(call).rejects.toThrow(/couldn't retrieve a transcript/i);
+    await expect(call).rejects.not.toBeInstanceOf(NonRetriableError);
   });
 
-  it('throws a non-retriable error when the transcript resolves with zero cues', async () => {
+  it('throws a retriable error (not NonRetriableError) when the transcript resolves with zero cues', async () => {
     vi.mocked(YoutubeTranscript.fetchTranscript).mockResolvedValue([]);
 
-    await expect(
-      youtubeAdapter.parse(undefined as never, {
-        sourceId: 'source-1',
-        storagePath: null,
-        originUrl: 'https://www.youtube.com/watch?v=abc123XYZ_-',
-      }),
-    ).rejects.toThrow(/no available transcript/i);
+    const call = youtubeAdapter.parse(undefined as never, {
+      sourceId: 'source-1',
+      storagePath: null,
+      originUrl: 'https://www.youtube.com/watch?v=abc123XYZ_-',
+    });
+
+    await expect(call).rejects.toThrow(/couldn't retrieve a transcript/i);
+    await expect(call).rejects.not.toBeInstanceOf(NonRetriableError);
   });
 
   it('produces timestamped blocks from a successful transcript fetch', async () => {
