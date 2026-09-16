@@ -24,11 +24,18 @@ async function incrementAndCheck(
   windowSeconds: number,
 ): Promise<boolean> {
   const redis = getRedis();
-  const count = await redis.incr(key);
-  if (count === 1) {
-    await redis.expire(key, windowSeconds);
+  try {
+    const count = await redis.incr(key);
+    if (count === 1) {
+      await redis.expire(key, windowSeconds);
+    }
+    return count <= max;
+  } catch (error) {
+    // A misconfigured or unreachable rate-limit store must not take down the
+    // feature it's guarding — fail open and let the request through.
+    console.error('abuse-prevention: Redis check failed, failing open', error);
+    return true;
   }
-  return count <= max;
 }
 
 export async function checkRateLimit(bucket: Bucket, identity: string, ip: string): Promise<void> {
