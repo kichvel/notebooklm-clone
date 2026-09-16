@@ -2,7 +2,7 @@ import 'server-only';
 import { NonRetriableError } from 'inngest';
 import { inngest } from '@/lib/inngest/client';
 import { createServiceClient } from '@/lib/supabase/server';
-import { embed, generate } from '@/lib/providers/openai';
+import { embedBatch, generate } from '@/lib/providers/openai';
 import { maybeGenerateNotebookTitle } from '@/lib/generation/notebookIntro';
 import { maybeGenerateSourceIntro } from '@/lib/generation/sourceIntro';
 import { getAdapter } from './adapters';
@@ -48,6 +48,9 @@ function normalizeText(text: string): string {
 
 const TARGET_CHUNK_CHARS = 800;
 const MIN_CHUNK_CHARS = 200;
+// Comfortably under the embeddings endpoint's 2048-input / 300k-token per-request limits
+// even for a chunk near TARGET_CHUNK_CHARS, while keeping one failed batch's retry cost small.
+const EMBED_BATCH_SIZE = 100;
 
 function packUnits(units: string[], joiner: string, maxChars: number): string[] {
   const packed: string[] = [];
@@ -235,27 +238,29 @@ export const ingestSource = inngest.createFunction(
 
     await step.run('embed', async () => {
       await upsertProcessingStep(supabase, sourceId, 'embed', 'in_progress');
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i] as Chunk;
-        const embedding = await embed(chunk.text);
-        const { error } = await supabase.from('source_chunks').upsert(
-          {
+      try {
+        for (let start = 0; start < chunks.length; start += EMBED_BATCH_SIZE) {
+          const batch = chunks.slice(start, start + EMBED_BATCH_SIZE) as Chunk[];
+          const embeddings = await embedBatch(batch.map((chunk) => chunk.text));
+          const rows = batch.map((chunk, i) => ({
             source_id: sourceId,
-            chunk_index: i,
+            chunk_index: start + i,
             content: chunk.text,
             page_number: chunk.page ?? null,
             section: chunk.section ?? null,
             start_seconds: chunk.startSeconds ?? null,
-            embedding,
-          },
-          { onConflict: 'source_id,chunk_index' },
-        );
-        if (error) {
-          await upsertProcessingStep(supabase, sourceId, 'embed', 'failed');
-          throw error;
+            embedding: embeddings[i],
+          }));
+          const { error } = await supabase
+            .from('source_chunks')
+            .upsert(rows, { onConflict: 'source_id,chunk_index' });
+          if (error) throw error;
         }
+        await upsertProcessingStep(supabase, sourceId, 'embed', 'succeeded');
+      } catch (error) {
+        await upsertProcessingStep(supabase, sourceId, 'embed', 'failed');
+        throw error;
       }
-      await upsertProcessingStep(supabase, sourceId, 'embed', 'succeeded');
     });
 
     await step.run('generate-title', async () => {

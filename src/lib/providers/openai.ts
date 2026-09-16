@@ -27,6 +27,20 @@ export async function embed(text: string): Promise<number[]> {
   return response.data[0].embedding;
 }
 
+// The embeddings endpoint accepts an array of inputs in a single request, so batching
+// avoids one HTTP round trip per chunk when embedding an entire source at ingestion time.
+export async function embedBatch(texts: string[]): Promise<number[][]> {
+  if (texts.length === 0) return [];
+  const response = await getClient().embeddings.create({
+    model: EMBEDDING_MODEL,
+    input: texts,
+  });
+  return response.data
+    .slice()
+    .sort((a, b) => a.index - b.index)
+    .map((item) => item.embedding);
+}
+
 export async function generate({
   system,
   prompt,
