@@ -42,7 +42,7 @@ The workspace uses a three-column layout inspired by NotebookLM:
 
 - **Sources panel:** add, inspect, select, deselect, retry, and delete sources.
 - **Chat panel:** notebook overview, key topics, conversation history, question input, answers, and citations.
-- **Studio panel:** on-demand generation of a study guide, flashcards, or a quiz from the notebook's sources. The UI for these three is in place; generation logic is planned but not yet implemented.
+- **Studio panel:** on-demand generation of flashcards or a quiz from the notebook's sources, fully implemented. A study guide feature was originally scoped alongside these but has been cut from this submission.
 
 The source panel includes a **Select all** control and an individual checkbox for each source. Selection changes affect future questions only.
 

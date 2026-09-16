@@ -15,7 +15,7 @@ The full product/architecture spec lives in `docs/`:
 - `docs/DECISIONS.md` — ADRs explaining _why_ (grounding rules, streaming, revisioning, etc.)
 - `docs/ROADMAP.md` — delivery plan
 
-**Current state: this is a scaffold only.** The project structure and service wiring exist (Next.js app, Supabase/Inngest/OpenAI/Langfuse clients), but no feature logic has been implemented yet — `src/lib/*` domain modules are empty placeholders. Read `docs/ARCHITECTURE.md` before implementing any of them; do not assume behavior described there is already built.
+**Current state: the MVP is implemented.** All `src/lib/*` domain modules (`notebooks/`, `sources/`, `ingestion/`, `retrieval/`, `generation/`, `citations/`, `providers/`, `abuse-prevention/`) have working implementations wired to the real Supabase/Inngest/OpenAI stack, not placeholders. The one exception is `src/lib/observability/`, which is an intentional empty stub — Langfuse is cut from this submission (see below); the module boundary is kept in place for future wiring. Read `docs/ARCHITECTURE.md` for the design rationale before changing a module's behavior.
 
 ## Commands
 
@@ -62,9 +62,9 @@ CI (`.github/workflows/ci.yml`) runs lint → typecheck → test → build on pu
 - Private Supabase Storage — original files and extracted snapshots
 - Inngest — durable background ingestion workflows (one per source, retriable steps)
 - OpenAI — embeddings, generation, summaries (behind a small provider interface, per ADR-006 — never call the OpenAI SDK directly from application code)
-- Langfuse — AI observability (metadata-first by default; full-content tracing is an explicit dev-only setting, per ADR-010)
+- Langfuse — AI observability; **cut from this submission** (metadata-first design retained in `docs/DECISIONS.md` ADR-010 for future implementation)
 
-**Domain module boundaries** (`src/lib/`): notebook/source operations, ingestion, retrieval, generation, and citation resolution are kept as separate small server-side modules (`notebooks/`, `sources/`, `ingestion/`, `retrieval/`, `generation/`, `citations/`, plus `providers/` for the OpenAI interface and `observability/` for Langfuse). UI components should consume this application state rather than re-implementing retrieval or permission logic. This separation is a deliberate architectural boundary (`docs/ARCHITECTURE.md` §3), not incidental structure — keep new code inside the module matching its responsibility.
+**Domain module boundaries** (`src/lib/`): notebook/source operations, ingestion, retrieval, generation, and citation resolution are kept as separate small server-side modules (`notebooks/`, `sources/`, `ingestion/`, `retrieval/`, `generation/`, `citations/`, plus `providers/` for the OpenAI interface and `observability/` reserved for Langfuse, currently an empty stub). UI components should consume this application state rather than re-implementing retrieval or permission logic. This separation is a deliberate architectural boundary (`docs/ARCHITECTURE.md` §3), not incidental structure — keep new code inside the module matching its responsibility.
 
 **Non-negotiable product rules to preserve when implementing features** (see `docs/DECISIONS.md` for rationale):
 
