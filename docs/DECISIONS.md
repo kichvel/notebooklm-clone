@@ -96,13 +96,15 @@ The trade-offs below explain the choices made during planning, not a claim that 
 
 ## ADR-010 — Observe AI work with metadata-first Langfuse traces
 
+**Status: cut from the seven-day submission.** `src/lib/observability/` is kept as an empty stub so the module boundary this ADR describes is preserved for later work, but no Langfuse wiring, SDK dependency, or tracing calls exist in the current codebase. The design below is the intended future implementation, not a completed decision.
+
 **Decision:** Record models, timings, usage, retrieval IDs, outcomes, and sanitized errors in Langfuse by default. Enable full-content tracing only through an explicit development setting.
 
 **Rationale:** Understand AI behavior, performance, and usage without routinely duplicating uploaded content in traces.
 
 **Trade-offs:** Metadata-only traces provide less detail for debugging production answers. Full-content development tracing must be deliberately controlled, including automatic instrumentation. Observability adds a dependency but must not determine whether user work succeeds.
 
-**Revisit when:** Concrete debugging or evaluation needs require more detail, with an explicit decision about what content may be recorded.
+**Revisit when:** The observability module is actually implemented, or concrete debugging or evaluation needs require more detail, with an explicit decision about what content may be recorded.
 
 ## ADR-011 — Keep the interaction and import scope focused
 

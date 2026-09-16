@@ -530,7 +530,7 @@ export async function* retryAnswer(
         content: '',
         reasoning: '',
         attempt_id: attemptId,
-        follow_up_questions: null,
+        follow_up_questions: [],
       })
       .eq('id', messageId);
     if (resetError) throw resetError;

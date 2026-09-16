@@ -19,9 +19,9 @@ Priorities are correctness, visible failures, simple component boundaries, and a
 | Private Supabase Storage | Original files and extracted document snapshots |
 | Inngest | Durable background orchestration, granular steps, and retries |
 | OpenAI | Embeddings, query rewriting, answers, source summaries, and notebook synthesis |
-| Langfuse | AI traces, timing, token usage, and evaluation visibility |
+| Langfuse | AI traces, timing, token usage, and evaluation visibility — **cut from this submission**, see §12 |
 
-Supabase owns application state; Inngest executes work; Langfuse observes it. Neither job history nor traces substitute for application records.
+Supabase owns application state; Inngest executes work; Langfuse would observe it once implemented. Neither job history nor traces substitute for application records.
 
 ```mermaid
 flowchart TD
@@ -167,7 +167,7 @@ Keep API credentials and privileged database keys out of the browser and reposit
 
 ## 12. Observability and failure handling
 
-Langfuse records model and prompt versions, timings, token usage, retrieved source/chunk IDs, outcome, and sanitized errors by default. Full prompts, passages, questions, and answers are recorded only when explicitly enabled for development. Apply this policy to automatic instrumentation as well as application logs.
+**Langfuse is cut from this submission.** `src/lib/observability/` exists as an empty stub module so the boundary from ADR-010 is preserved, but no tracing calls are wired into ingestion or generation. The design below (model/prompt versions, timings, token usage, retrieved source/chunk IDs, outcome, sanitized errors by default, full-content tracing only under an explicit dev setting) remains the intended future implementation, not current behavior. Apply this policy to automatic instrumentation as well as application logs once it is built.
 
 Correlate traces with notebook, source, job, and generation-attempt IDs. Trace failures must not fail user work. Supabase remains authoritative for user-visible status.
 
@@ -189,7 +189,7 @@ Correlate traces with notebook, source, job, and generation-attempt IDs. Trace f
 - **End-to-end:** create notebook → upload → ready → question → grounded answer → inspect citation.
 - **Fixed AI evaluation set:** supported questions, insufficient evidence, follow-ups, and changed source selection. Assess semantic support as well as citation validity.
 
-Deploy the Next.js application and Inngest handlers on Vercel, with managed Supabase, Inngest, OpenAI, and Langfuse integrations. Keep database schema and RLS changes in versioned migrations; document environment variables and local setup. Choose parser runtimes and step sizes within the actual hosting execution limits before implementation is finalized.
+Deploy the Next.js application and Inngest handlers on Vercel, with managed Supabase, Inngest, and OpenAI integrations (Langfuse is cut from this submission per §12). Keep database schema and RLS changes in versioned migrations; document environment variables and local setup. Choose parser runtimes and step sizes within the actual hosting execution limits before implementation is finalized.
 
 ## 14. Deliberate trade-offs and remaining choices
 
