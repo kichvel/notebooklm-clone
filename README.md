@@ -14,17 +14,19 @@ The architecture is deliberately kept simple and easy to follow: two linear pipe
 - **Provider adapter** — all embedding, generation, and transcription calls go through one adapter interface, so the application logic doesn't depend on which model or vendor sits behind it (currently OpenAI).
 
 ```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 30, "rankSpacing": 55, "curve": "linear"}}}%%
 flowchart TB
     UI["Next.js + TypeScript<br/>UI, chat, citation viewer"]
     Auth[["Supabase Auth<br/>anonymous identity"]]
+    UI --> Auth
 
+    UI -- "upload source" --> I1
     subgraph Ingest["Ingestion — one durable Inngest workflow per source"]
-        direction LR
         I1["Parse /<br/>Transcribe"] --> I2["Normalize"] --> I3["Chunk"] --> I4["Embed"] --> I5["Finalize &<br/>Store"]
     end
 
+    UI -- "ask question" --> Q1
     subgraph QA["Question answering — per chat message"]
-        direction LR
         Q1["Query<br/>Processing"] --> Q2["Retrieval"] --> Q3["Context<br/>Assembly"] --> Q4["Generation"] --> Q5["Citation<br/>Validation"]
     end
 
@@ -32,17 +34,13 @@ flowchart TB
     FileStore[("Supabase Storage<br/>original files & snapshots")]
     Provider{{"Provider adapter<br/>→ OpenAI (embed, generate, transcribe)"}}
 
-    UI --> Auth
-    UI -- "upload source" --> Ingest
-    UI -- "ask question" --> QA
-
-    Ingest --> FileStore
-    I5 --> DB
+    I1 -.-> FileStore
     I4 -.-> Provider
+    I5 --> DB
 
     Q2 --> DB
     Q4 -.-> Provider
-    QA -- "streamed, validated answer" --> UI
+    Q5 --> Answer["Streamed, validated answer"]
 ```
 
 No model call happens directly from application code — embedding, generation, and transcription only ever go through the provider adapter, which is what keeps the pipelines above independent of the specific AI vendor.
