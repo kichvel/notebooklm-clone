@@ -1,49 +1,58 @@
-# Design Brief — Public-deployment abuse guardrails
+# Design Brief — Direct-to-storage file uploads + honest YouTube transcript failures
 
-**Goal:** Before the live Vercel deployment is shared publicly, add the minimum set of guardrails that prevent it from running up an unbounded OpenAI bill or being trivially spammed — sized for a take-home evaluation demo, not enterprise production.
-**Date:** 2026-09-15
+**Goal:** Users can upload large files (e.g. an 18MB/175-page PDF) as sources in production, and a YouTube source that fails to fetch a transcript gets a retriable, honest failure instead of a permanent false "no transcript" claim.
+**Date:** 2026-09-16
 
 ## Shared understanding
-Sourcebook is a take-home project for an AI Full Stack Engineer role, about to be deployed live and publicly linked. The evaluation bar here is judgment and proportionality, not attack-resistance: the goal is to demonstrate awareness of production AI cost/abuse concerns without over-engineering a 7-day demo. Today the app has solid input-safety fundamentals already in place (server-enforced 10-sources/10MB-per-file limits in `src/app/api/notebooks/[notebookId]/sources/route.ts`, SSRF-hardened URL fetching in `src/lib/ingestion/url-safety.ts`, RLS-backed ownership isolation) but nothing stops total request volume or OpenAI spend from growing unbounded — there's no rate limiting, no shared counter store, no security headers, and per ADR-003 anonymous Supabase identities can be trivially recreated so identity-only limits aren't sufficient alone. We're adding four small, independent pieces: (1) a deployment-wide daily AI-spend kill switch that visibly blocks new AI-costing work once a conservative, env-configurable ceiling is hit — the one failure mode that could actually break the demo or the bill before a reviewer opens it; (2) lightweight rate limiting keyed on both the anonymous identity and the request IP (defense against identity recreation) on the endpoints that cost money — notebook creation, source creation, chat messages; (3) free security headers (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy) since they cost nothing and are baseline hygiene; (4) a new ADR in `docs/DECISIONS.md`, matching the project's existing ADR format, explicitly recording this as a scoped "public demo hygiene" decision and naming what's deliberately excluded (CAPTCHA, WAF/bot scoring, ML-based fraud detection) so the trade-off reasoning itself is visible to a reviewer. No CAPTCHA or other user-facing friction — stays frictionless per the product's "useful before prompting" principle. Everything stays behind small, swappable interfaces consistent with the project's existing module boundaries; nothing here touches the anonymous-identity model, RLS, or the already-solid SSRF/file-size protections.
+
+Two independent production bugs, bundled into one plan because they surfaced in the same session:
+
+**1. File uploads fail above ~4.5MB in production (but not on localhost).** Files are currently uploaded as multipart form data through `POST /api/notebooks/[notebookId]/sources` (`src/app/api/notebooks/[notebookId]/sources/route.ts`), which enforces its own `MAX_FILE_BYTES = 10MB`. In production (Vercel), the platform's serverless function request-body ceiling (~4.5MB, not configurable) kills the request before that check ever runs, so anything above ~4.5MB fails with a generic `!response.ok` error client-side (`notebook-workspace.tsx:113`) rather than the app's own clearer "skipped" message. The fix is to stop routing file bytes through the serverless function at all: the browser already holds an authenticated Supabase client (`src/lib/supabase/client.ts`), and the existing `storage.objects` RLS policy already permits a notebook owner to write under `sources/{notebookId}/*` without a `sources` row existing yet — so the client can upload directly to Supabase Storage, then register the source via a small JSON call.
+
+**2. YouTube transcript fetches are falsely reported as "no transcript" in production.** `src/lib/ingestion/adapters/youtube.ts` uses `youtube-transcript`, which YouTube increasingly blocks from datacenter IPs (Vercel included) by omitting caption-track data from its response — indistinguishable, from our code's point of view, from a video that genuinely has no captions. Today this is thrown as a `NonRetriableError` with the message "This video has no available transcript," which is both a permanent failure (no retry) and potentially a false claim about the video. Confirmed root cause via `node_modules/youtube-transcript/dist/esm/index.js` — no code change there (it's a dependency), the fix is entirely in how our adapter treats the failure. No paid proxy service is in scope; this is an honesty + retriability fix, not a guaranteed unblock.
 
 ## Key decisions
-- New dependency: Upstash Redis (free tier) + `@upstash/ratelimit` — the leanest shared counter store that works across Vercel's serverless/edge invocations; nothing else is set up yet.
-- Rate limiting keys: `identity:<supabase-anon-user-id>` and `ip:<x-forwarded-for>`, checked together (request rejected if either is exceeded) — identity alone is insufficient since anon sessions can be recreated (ADR-003).
-- Global kill switch: one Redis counter per UTC day (`ai-spend:<date>`), incremented on each AI-costing call site (embeddings, generation, transcription, source/notebook summaries), compared against a conservative env-configurable ceiling (e.g. `AI_DAILY_CALL_CEILING`). Tracks call count as a cost proxy, not literal dollars — simple, no billing-API integration needed.
-- New small module `src/lib/abuse-prevention/` (naming to match existing `src/lib/<domain>/index.ts` convention) exposing `checkRateLimit(identity, ip, bucket)` and `checkGlobalCeiling()`, called from API routes before costly work starts. Kept separate from `providers/` since it's a cross-cutting request guard, not a model-provider concern.
-- Applied at the API route layer (notebook creation, source creation routes, message/chat route) rather than global `middleware.ts`, since limits differ per action type (e.g. source creation vs. chat has a different bucket/cost weight) and the checks need the authenticated identity, which route handlers already resolve.
-- When a limit is hit, return an actionable 429-style response with a clear message; the UI surfaces it using the existing error-display pattern (per product principle: failures are visible, not silent).
-- Security headers added via `next.config.ts` `headers()` — no new dependency.
-- Numeric defaults are conservative starting points documented in `.env.example` and the new ADR, tunable after watching real traffic — not treated as final/validated numbers.
+
+**Upload architecture:**
+- Client generates a UUID client-side, uploads the file directly to Supabase Storage at `sources/{notebookId}/{uuid}/original.{ext}` via the browser Supabase client — no new signed-URL-minting endpoint needed; existing RLS already scopes this to the notebook owner.
+- `POST /api/notebooks/[notebookId]/sources` changes to accept a JSON registration body (`{id, filename, fileSize}`) for file sources, in place of receiving the file bytes. It still enforces auth, rate limiting, the global ceiling, and the per-notebook 10-source cap exactly as today.
+- Size limit raised: 50MB for pdf/docx/md (matches Supabase Storage's default bucket ceiling, comfortably covers the reported 18MB file); audio stays at 25MB (an OpenAI Whisper limit, unrelated to Vercel) but moves to the same direct-upload path for consistency, since audio was equally exposed to the ~4.5MB Vercel ceiling before.
+- The registration call verifies the object actually exists in Storage at the expected path with a size matching what's claimed, before inserting the `sources` row — the server never trusts the client's claimed size or the mere existence of a request.
+- If registration fails validation (oversized, wrong type, limit reached), the just-uploaded Storage object is deleted so nothing orphaned lingers from a rejected upload.
+- Pasted-text sources are unaffected (already JSON, already small).
+
+**YouTube transcript failures:**
+- Stop throwing `NonRetriableError` for "no captions found" — throw a normal (retriable) `Error` instead, so Inngest's existing default step retry/backoff (already configured implicitly on `ingestSource`, `src/lib/ingestion/index.ts:194`) spaces out a few attempts over time rather than failing permanently on the first blocked response.
+- Reword the failure message to stop asserting a fact about the video that we can't actually verify (e.g. "Couldn't retrieve a transcript for this video" instead of "This video has no available transcript"), surfaced via the existing `onFailure` → `markSourceIngestionFailed` path once retries are exhausted.
+- No proxy service, no header/client-context spoofing beyond what the library already does — those were considered and explicitly deferred (see Out of scope) since they're fragile and of uncertain benefit relative to their complexity.
 
 ## Constraints
-- No added friction for legitimate users (no CAPTCHA, no verification step).
-- Does not modify RLS policies, the anonymous-identity model, or existing SSRF/file-size/source-count enforcement — those are already adequate.
-- OpenAI calls remain routed only through `src/lib/providers/` (ADR-006); the ceiling check wraps call sites, it doesn't reach into the provider module.
-- Must degrade visibly (explicit blocked/limited message), never silently drop or fail work.
+
+- No new paid third-party services (proxy providers, transcript APIs) — explicitly ruled out by the user for this pass.
+- Must not weaken the ownership/RLS model: client-side storage writes rely on existing RLS, not on trusting client-supplied notebook/source IDs as proof of access (per `CLAUDE.md` / `docs/ARCHITECTURE.md` §5).
+- Existing per-notebook source cap, rate limiting, and global ceiling enforcement must keep working identically for file sources.
 
 ## Out of scope
-- CAPTCHA or any bot-verification step.
-- Vercel Firewall/WAF configuration, IP reputation, or ML-based abuse scoring.
-- Literal dollar-based billing integration (OpenAI usage API polling) — call-count is an adequate proxy for this scope.
-- Per-user account tiers, paid plans, or any authentication changes.
-- Redoing or extending the existing SSRF, file-size, or source-count protections.
+
+- Raising file size limits beyond 50MB, or adding page-count/memory guards inside the PDF parser (`src/lib/ingestion/adapters/pdf.ts`).
+- A cleanup sweep for Storage objects uploaded but never registered (client crash/closed tab mid-flow) — harmless orphaned bytes, not a security or quota issue; noted as a future follow-up only.
+- Any paid residential/rotating-proxy integration for YouTube fetches, or reverse-engineering alternate InnerTube client contexts to dodge blocking — deferred as fragile and speculative.
+- Guaranteeing YouTube transcript fetches succeed in production — this pass makes failures honest and retriable, not eliminated.
 
 ## Success criteria
-- A scripted burst of requests (same identity or same IP) against notebook creation, source creation, or chat is visibly rejected with an actionable message once its bucket's limit is exceeded, without affecting other identities/IPs.
-- Once the daily AI-call ceiling is reached, new source ingestion and new chat questions are visibly refused (not silently queued or dropped) until the counter resets the next UTC day; already-in-flight work is unaffected.
-- Response headers on every page include CSP, `X-Frame-Options`, `X-Content-Type-Options`, and `Referrer-Policy`.
-- `docs/DECISIONS.md` has a new ADR describing this scope and its explicit exclusions, in the same rationale/trade-offs/revisit-when format as the existing records.
-- `npm run typecheck`, `npm run lint`, and `npm run test` remain green; no existing test's behavior changes.
+
+- Uploading an 18MB, 175-page PDF succeeds in production (manually verified against the deployed app, not just locally).
+- A file source that exceeds 50MB (or 25MB for audio) is rejected with a clear, specific message — never the generic "Something went wrong" toast.
+- A rejected/oversized upload leaves no orphaned object in the `sources` Storage bucket.
+- A YouTube source whose transcript fetch fails is retried by Inngest (visible in Inngest's run history as multiple attempts) before being marked failed, and its final failure message does not claim the video has no transcript when that wasn't actually confirmed.
+- `npm run typecheck`, `npm run lint`, and `npm run test` stay green; `youtube.test.ts` and any upload-related tests are updated to match the new behavior, not deleted to dodge failures.
 
 ## Expected files touched
-- `src/lib/abuse-prevention/index.ts` (new) — rate limit + global ceiling checks, Upstash client
-- `src/lib/abuse-prevention/*.test.ts` (new) — unit tests for limit logic (mocked store)
-- `src/app/api/notebooks/route.ts` — rate limit on notebook creation
-- `src/app/api/notebooks/[notebookId]/sources/route.ts` — rate limit + ceiling check on source creation
-- `src/app/api/notebooks/[notebookId]/sources/website/route.ts`, `.../youtube/route.ts` — same
-- `src/app/api/notebooks/[notebookId]/messages/route.ts` — rate limit + ceiling check on chat
-- `next.config.ts` — security headers
-- `.env.example` — new Upstash + ceiling/limit env vars
-- `docs/DECISIONS.md` — new ADR
-- `package.json` — new `@upstash/ratelimit`, `@upstash/redis` dependencies
+
+- `src/app/api/notebooks/[notebookId]/sources/route.ts` — replace multipart handling with JSON registration + Storage existence/size verification
+- `src/lib/sources/index.ts` — `createFileSource` takes an already-uploaded storage path instead of a `Blob`; cleanup-on-rejection logic
+- `src/app/notebooks/[notebookId]/notebook-workspace.tsx` — `handleAddFiles` uploads to Storage via the browser client first, then calls the registration endpoint
+- `src/components/sources/add-source-dialog.tsx` — likely unchanged, but verify error surfacing still matches
+- `src/lib/ingestion/adapters/youtube.ts` — retriable error + honest message
+- `src/lib/ingestion/adapters/youtube.test.ts` — update expectations for the new error type/message
+- `docs/ARCHITECTURE.md` — update §6/upload description if it documents the old multipart flow

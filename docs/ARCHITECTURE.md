@@ -161,7 +161,7 @@ Database checks, rather than cancellation alone, provide correctness when backgr
 
 Fetch only a supplied public HTTP(S) HTML page. Enforce request timeouts, redirect limits, response-size limits, and extracted-text limits. Block private/internal destinations and validate resolved destinations again for redirects. Login-dependent pages and pages requiring JavaScript rendering receive an unsupported-source error. There is no crawler or web-search service.
 
-Enforce 10 sources per notebook and 10 MB per uploaded file server-side. Configure additional limits for pasted/extracted text, questions per anonymous user, context size, and simultaneous jobs. Use a deployment-wide usage ceiling because anonymous identities can be recreated. Reject or defer new AI work visibly when limits are reached.
+Enforce 10 sources per notebook and 50 MB per uploaded file (25 MB for audio, matching the transcription provider's own limit) server-side. Configure additional limits for pasted/extracted text, questions per anonymous user, context size, and simultaneous jobs. Use a deployment-wide usage ceiling because anonymous identities can be recreated. Reject or defer new AI work visibly when limits are reached.
 
 Keep API credentials and privileged database keys out of the browser and repository. Numeric quotas, budget accounting details, and retention/cleanup timing are implementation settings to document before deployment.
 
