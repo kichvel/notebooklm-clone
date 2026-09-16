@@ -93,6 +93,29 @@ export function joinWrappedLines(text: string): string {
   return out.join('\n');
 }
 
+const SENTENCE_END = /[.!?]$/;
+
+// A blank-line-delimited paragraph that doesn't end in sentence-terminal punctuation
+// reads as a label or heading (e.g. a resume entry's "12.2023 – Present ... Munich"
+// title/company/date line) rather than a complete standalone thought. The visual gap
+// its author used to introduce the content below it looks, to the blank-line split
+// above, identical to the gap between two independent paragraphs — but publishing it
+// as its own chunk strips the entity/date context that content depends on. Fold it
+// into the paragraph that follows so a question like "what did they do at Accenture"
+// retrieves the company name alongside the work it introduces.
+function mergeHeadingsForward(paragraphs: string[]): string[] {
+  const merged: string[] = [];
+  for (const paragraph of paragraphs) {
+    const prev = merged[merged.length - 1];
+    if (prev !== undefined && !SENTENCE_END.test(prev)) {
+      merged[merged.length - 1] = `${prev}\n${paragraph}`;
+    } else {
+      merged.push(paragraph);
+    }
+  }
+  return merged;
+}
+
 // A size-based split can still leave a small leftover piece (e.g. one short trailing
 // sentence). Fold anything under the minimum into a neighbor rather than publishing a
 // decontextualized fragment as its own chunk.
@@ -142,10 +165,12 @@ function splitOversizedParagraph(text: string, maxChars: number): string[] {
 }
 
 export function chunkBlock(block: SourceBlock): Chunk[] {
-  return joinWrappedLines(block.text)
+  const paragraphs = joinWrappedLines(block.text)
     .split(/\n\s*\n/)
     .map((part) => part.trim())
-    .filter((part) => part.length > 0)
+    .filter((part) => part.length > 0);
+
+  return mergeHeadingsForward(paragraphs)
     .flatMap((part) => splitOversizedParagraph(part, TARGET_CHUNK_CHARS))
     .map((text) => ({
       text,
