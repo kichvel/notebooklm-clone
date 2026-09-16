@@ -69,6 +69,13 @@ function packUnits(units: string[], joiner: string, maxChars: number): string[] 
 const BULLET_LINE = /^[•▪◦‣∙*-]\s|^\d+[.)]\s/;
 const HARD_LINE_BREAK = /[.:;!?]$/;
 
+// Matches a resume/CV entry heading that opens with a date range, e.g.
+// "12.2023 – Present Management Analyst ..." or "2019 - 2021 Engineer ...".
+const DATE_RANGE_HEADING = new RegExp(
+  `^(?:\\d{1,2}[./]\\d{4}|\\d{4})\\s*[–—-]\\s*(?:present|\\d{1,2}[./]\\d{4}|\\d{4})\\b`,
+  'i',
+);
+
 // PDF text extraction gives one line per visually wrapped line on the page, not one
 // per sentence or bullet, so a single bullet point often spans several extracted
 // lines. Rejoin a line into the previous one when the previous line doesn't already
@@ -88,6 +95,19 @@ export function joinWrappedLines(text: string): string {
     }
   }
   return out.join('\n');
+}
+
+// PDF extraction of dense, multi-entry documents (resumes/CVs) often drops the blank
+// line between the last bullet of one entry and the dated heading of the next, so both
+// land in the same blank-line-delimited paragraph below. Without a forced break here,
+// the size-based packer in splitOversizedParagraph is free to glue the new entry's
+// heading onto the tail of the previous entry's chunk. Insert a paragraph break before
+// any such heading line so it always starts fresh.
+function insertSectionBreaks(text: string): string {
+  return text
+    .split('\n')
+    .map((line, i) => (i > 0 && DATE_RANGE_HEADING.test(line.trim()) ? `\n${line}` : line))
+    .join('\n');
 }
 
 // A size-based split can still leave a small leftover piece (e.g. one short trailing
@@ -139,7 +159,7 @@ function splitOversizedParagraph(text: string, maxChars: number): string[] {
 }
 
 export function chunkBlock(block: SourceBlock): Chunk[] {
-  return joinWrappedLines(block.text)
+  return insertSectionBreaks(joinWrappedLines(block.text))
     .split(/\n\s*\n/)
     .map((part) => part.trim())
     .filter((part) => part.length > 0)

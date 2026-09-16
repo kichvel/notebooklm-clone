@@ -128,6 +128,26 @@ describe('chunkBlock', () => {
     expect(chunks[0].text).toBe(text);
   });
 
+  it("does not merge the next resume entry's dated heading into the previous entry's chunk", () => {
+    // Mirrors real PDF extraction of a resume: no blank line separates the last bullet
+    // of one job from the dated heading of the next, so both would otherwise land in
+    // the same blank-line-delimited paragraph and get packed together.
+    const previousEntryBullets = [
+      "▪ Built and operated the product's subscription and growth stack, integrating analytics, attribution, lifecycle marketing, and monetization systems to support experimentation across pricing, onboarding, acquisition, and retention.",
+      '▪ Designed event-driven backend infrastructure for asynchronous workflows, lifecycle messaging, localization, and multi-stage automation pipelines.',
+      '▪ Drove data-informed product development through funnel and cohort analysis, A/B experimentation, user research, and acquisition attribution, continuously optimizing activation, retention, monetization, and store conversion while maintaining a <0.1% production crash rate.',
+    ].join('\n');
+    const nextEntryHeading =
+      '12.2023 – Present Management Analyst & Technical Consultant Accenture - Industry X, Munich';
+    const text = [previousEntryBullets, nextEntryHeading].join('\n');
+
+    const chunks = chunkBlock({ text, page: 1 });
+
+    const chunkWithBullets = chunks.find((c) => c.text.includes('production crash rate'));
+    expect(chunkWithBullets?.text).not.toContain('Management Analyst');
+    expect(chunks.some((c) => c.text.startsWith(nextEntryHeading))).toBe(true);
+  });
+
   it('merges a tiny leftover piece into its neighbor instead of publishing an orphaned fragment', () => {
     const bigLine = `${'Y'.repeat(789)}.`;
     const smallLine = 'Tiny trailing fact stands alone.';
