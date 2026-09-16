@@ -264,7 +264,9 @@ async function* runGeneration(
   let generated = '';
   try {
     const history = await fetchRecentMessages(supabase, notebookId);
-    const overviewIntent = isNotebookOverviewQuestion(question);
+    const retrievalQuestion = await rewriteFollowUpQuery(history, question);
+    const queryEmbedding = await embed(retrievalQuestion);
+    const overviewIntent = await isNotebookOverviewQuestion(queryEmbedding);
 
     let results: SourceSample[];
     if (overviewIntent) {
@@ -274,8 +276,6 @@ async function* runGeneration(
         chunksPerSource: OVERVIEW_CHUNKS_PER_SOURCE,
       });
     } else {
-      const retrievalQuestion = await rewriteFollowUpQuery(history, question);
-      const queryEmbedding = await embed(retrievalQuestion);
       results = await search(supabase, {
         notebookId,
         sourceIds,
