@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { MAX_TRANSCRIPTION_AUDIO_BYTES } from '@/lib/providers/openai';
 import { createClient } from '@/lib/supabase/server';
 import { createFileSource, createPastedTextSource } from '@/lib/sources';
 import {
@@ -11,16 +10,12 @@ import {
 } from '@/lib/abuse-prevention';
 
 const MAX_SOURCES_PER_NOTEBOOK = 10;
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const AUDIO_EXTENSIONS = new Set(['mp3', 'wav', 'm4a', 'webm', 'ogg']);
 
-async function handleFileUpload(
-  request: NextRequest,
+async function handleFileRegistration(
   supabase: Awaited<ReturnType<typeof createClient>>,
   notebookId: string,
+  files: { id: string; filename: string }[],
 ) {
-  const formData = await request.formData();
-  const files = formData.getAll('files').filter((f): f is File => f instanceof File);
   if (files.length === 0) {
     return NextResponse.json({ error: 'At least one file is required' }, { status: 400 });
   }
@@ -38,24 +33,21 @@ async function handleFileUpload(
 
   for (const file of files) {
     if (created.length >= remainingSlots) {
-      skipped.push({ filename: file.name, reason: 'Notebook source limit reached' });
-      continue;
-    }
-    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
-    const limit = AUDIO_EXTENSIONS.has(ext) ? MAX_TRANSCRIPTION_AUDIO_BYTES : MAX_FILE_BYTES;
-    if (file.size > limit) {
-      skipped.push({ filename: file.name, reason: `File exceeds ${limit / (1024 * 1024)}MB limit` });
+      skipped.push({ filename: file.filename, reason: 'Notebook source limit reached' });
       continue;
     }
     try {
       const source = await createFileSource(supabase, {
         notebookId,
-        filename: file.name,
-        file,
+        id: file.id,
+        filename: file.filename,
       });
       created.push(source);
-    } catch {
-      skipped.push({ filename: file.name, reason: 'Unsupported or invalid file' });
+    } catch (err) {
+      skipped.push({
+        filename: file.filename,
+        reason: err instanceof Error ? err.message : 'Unsupported or invalid file',
+      });
     }
   }
 
@@ -83,12 +75,11 @@ export async function POST(
     throw error;
   }
 
-  const contentType = request.headers.get('content-type') ?? '';
-  if (contentType.includes('multipart/form-data')) {
-    return handleFileUpload(request, supabase, notebookId);
+  const body = await request.json();
+  if (Array.isArray(body?.files)) {
+    return handleFileRegistration(supabase, notebookId, body.files);
   }
 
-  const body = await request.json();
   const { title, text } = body ?? {};
   if (typeof text !== 'string' || !text) {
     return NextResponse.json({ error: 'text is required' }, { status: 400 });
