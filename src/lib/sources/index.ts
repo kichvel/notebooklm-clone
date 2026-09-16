@@ -71,48 +71,59 @@ const FILE_EXTENSION_TYPE: Record<string, 'pdf' | 'docx' | 'txt' | 'audio'> = {
   ogg: 'audio',
 };
 
+const MAX_FILE_BYTES = 50 * 1024 * 1024;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface CreateFileSourceParams {
   notebookId: string;
+  id: string;
   filename: string;
-  file: Blob;
 }
 
+// The client uploads the file directly to Storage before calling this (see
+// ARCHITECTURE.md upload flow) — this only registers an object that must already
+// exist, verifying its real size via Storage rather than trusting the client's claim.
 export async function createFileSource(
   supabase: SupabaseClient,
-  { notebookId, filename, file }: CreateFileSourceParams,
+  { notebookId, id, filename }: CreateFileSourceParams,
 ) {
+  if (!UUID_RE.test(id)) throw new Error('Invalid source id');
+
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
   const type = FILE_EXTENSION_TYPE[ext];
   if (!type) throw new Error(`Unsupported file type: .${ext}`);
 
-  // pdf/docx are size-checked upstream in route.ts; audio is capped here too since
-  // this module is the only place that knows the transcription size limit.
-  if (type === 'audio' && file.size > MAX_TRANSCRIPTION_AUDIO_BYTES) {
-    throw new Error('Audio file exceeds the 25MB limit');
+  const storagePath = `${notebookId}/${id}/original.${ext}`;
+  const { data: info, error: infoError } = await supabase.storage.from('sources').info(storagePath);
+  if (infoError || !info) throw new Error('Uploaded file was not found in storage');
+
+  const limit = type === 'audio' ? MAX_TRANSCRIPTION_AUDIO_BYTES : MAX_FILE_BYTES;
+  if ((info.size ?? 0) > limit) {
+    await supabase.storage.from('sources').remove([storagePath]);
+    throw new Error(`File exceeds ${limit / (1024 * 1024)}MB limit`);
   }
 
   const placeholderTitle = filename.replace(/\.[^.]+$/, '') || filename;
 
   const { data: source, error: sourceError } = await supabase
     .from('sources')
-    .insert({ notebook_id: notebookId, type, title: placeholderTitle, original_filename: filename })
+    .insert({
+      id,
+      notebook_id: notebookId,
+      type,
+      title: placeholderTitle,
+      original_filename: filename,
+      storage_path: storagePath,
+    })
     .select()
     .single();
-  if (sourceError) throw sourceError;
+  if (sourceError) {
+    await supabase.storage.from('sources').remove([storagePath]);
+    throw sourceError;
+  }
 
-  const storagePath = `${notebookId}/${source.id}/original.${ext}`;
-  const { error: uploadError } = await supabase.storage.from('sources').upload(storagePath, file);
-  if (uploadError) throw uploadError;
-
-  const { data: updated, error: updateError } = await supabase
-    .from('sources')
-    .update({ storage_path: storagePath })
-    .eq('id', source.id)
-    .select()
-    .single();
-  if (updateError) throw updateError;
-
-  return enqueueOrMarkFailed(supabase, updated);
+  return enqueueOrMarkFailed(supabase, source);
 }
 
 export interface CreateWebsiteSourceParams {

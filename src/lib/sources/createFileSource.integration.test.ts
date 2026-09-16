@@ -10,6 +10,19 @@ const hasRealEnv = Boolean(
   process.env.OPENAI_API_KEY,
 );
 
+async function uploadTestFile(
+  user: Awaited<ReturnType<typeof createPrimaryTestClient>>,
+  notebookId: string,
+  ext: string,
+  body: Blob,
+) {
+  const id = crypto.randomUUID();
+  const storagePath = `${notebookId}/${id}/original.${ext}`;
+  const { error } = await user.storage.from('sources').upload(storagePath, body);
+  expect(error).toBeNull();
+  return { id, storagePath };
+}
+
 describe.skipIf(!hasRealEnv)('createFileSource', () => {
   const createdNotebookIds: string[] = [];
   const uploadedStoragePaths: string[] = [];
@@ -35,23 +48,29 @@ describe.skipIf(!hasRealEnv)('createFileSource', () => {
     expect(notebookError).toBeNull();
     createdNotebookIds.push(notebook!.id);
 
-    const file = new Blob(['%PDF-1.4 minimal test content'], { type: 'application/pdf' });
+    const { id, storagePath } = await uploadTestFile(
+      user,
+      notebook!.id,
+      'pdf',
+      new Blob(['%PDF-1.4 minimal test content'], { type: 'application/pdf' }),
+    );
+    uploadedStoragePaths.push(storagePath);
 
     const source = await createFileSource(user, {
       notebookId: notebook!.id,
+      id,
       filename: 'Quarterly Report.pdf',
-      file,
     });
 
+    expect(source.id).toBe(id);
     expect(source.title).toBe('Quarterly Report');
     expect(source.original_filename).toBe('Quarterly Report.pdf');
     expect(source.type).toBe('pdf');
     expect(['uploaded', 'failed']).toContain(source.status);
-    expect(source.storage_path).toBe(`${notebook!.id}/${source.id}/original.pdf`);
-    uploadedStoragePaths.push(source.storage_path as string);
+    expect(source.storage_path).toBe(storagePath);
   }, 30000);
 
-  it('rejects an unsupported file extension', async () => {
+  it('rejects an unsupported file extension and cleans up the uploaded object', async () => {
     const user = await createPrimaryTestClient();
     const { data: notebook } = await user
       .from('notebooks')
@@ -60,10 +79,26 @@ describe.skipIf(!hasRealEnv)('createFileSource', () => {
       .single();
     createdNotebookIds.push(notebook!.id);
 
-    const file = new Blob(['irrelevant']);
+    const { id } = await uploadTestFile(user, notebook!.id, 'exe', new Blob(['irrelevant']));
+
     await expect(
-      createFileSource(user, { notebookId: notebook!.id, filename: 'notes.exe', file }),
+      createFileSource(user, { notebookId: notebook!.id, id, filename: 'notes.exe' }),
     ).rejects.toThrow(/unsupported file type/i);
+  }, 30000);
+
+  it('rejects registration when no object was uploaded at the expected path', async () => {
+    const user = await createPrimaryTestClient();
+    const { data: notebook } = await user
+      .from('notebooks')
+      .insert({ title: 'Missing upload test notebook' })
+      .select()
+      .single();
+    createdNotebookIds.push(notebook!.id);
+
+    const id = crypto.randomUUID();
+    await expect(
+      createFileSource(user, { notebookId: notebook!.id, id, filename: 'never-uploaded.pdf' }),
+    ).rejects.toThrow(/not found in storage/i);
   }, 30000);
 
   it('registers an audio file source as type audio', async () => {
@@ -76,23 +111,28 @@ describe.skipIf(!hasRealEnv)('createFileSource', () => {
     expect(notebookError).toBeNull();
     createdNotebookIds.push(notebook!.id);
 
-    const file = new Blob([new Uint8Array(10)], { type: 'audio/mpeg' });
+    const { id, storagePath } = await uploadTestFile(
+      user,
+      notebook!.id,
+      'mp3',
+      new Blob([new Uint8Array(10)], { type: 'audio/mpeg' }),
+    );
+    uploadedStoragePaths.push(storagePath);
 
     const source = await createFileSource(user, {
       notebookId: notebook!.id,
+      id,
       filename: 'Interview.mp3',
-      file,
     });
 
     expect(source.title).toBe('Interview');
     expect(source.original_filename).toBe('Interview.mp3');
     expect(source.type).toBe('audio');
     expect(['uploaded', 'failed']).toContain(source.status);
-    expect(source.storage_path).toBe(`${notebook!.id}/${source.id}/original.mp3`);
-    uploadedStoragePaths.push(source.storage_path as string);
+    expect(source.storage_path).toBe(storagePath);
   }, 30000);
 
-  it('rejects an audio file that exceeds the 25MB cap', async () => {
+  it('rejects an audio file that exceeds the 25MB cap and cleans up the uploaded object', async () => {
     const user = await createPrimaryTestClient();
     const { data: notebook } = await user
       .from('notebooks')
@@ -101,10 +141,18 @@ describe.skipIf(!hasRealEnv)('createFileSource', () => {
       .single();
     createdNotebookIds.push(notebook!.id);
 
-    const file = new Blob([new Uint8Array(26 * 1024 * 1024)], { type: 'audio/mpeg' });
+    const { id, storagePath } = await uploadTestFile(
+      user,
+      notebook!.id,
+      'mp3',
+      new Blob([new Uint8Array(26 * 1024 * 1024)], { type: 'audio/mpeg' }),
+    );
 
     await expect(
-      createFileSource(user, { notebookId: notebook!.id, filename: 'huge.mp3', file }),
+      createFileSource(user, { notebookId: notebook!.id, id, filename: 'huge.mp3' }),
     ).rejects.toThrow(/25MB/);
+
+    const { data: stillThere } = await user.storage.from('sources').info(storagePath);
+    expect(stillThere).toBeNull();
   }, 30000);
 });
