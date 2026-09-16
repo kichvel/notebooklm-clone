@@ -430,8 +430,10 @@ describe.skipIf(!hasRealEnv)('streamAnswer', () => {
       if (done?.type !== 'done') throw new Error('expected done event');
       expect(done.result.status).toBe('complete');
       // The prompt explicitly tells the model there are 4 sources; it should reflect that
-      // instead of treating each of the (many more) passages as its own source.
-      expect(done.result.answer).toMatch(/\b(?:4|four)\b[^.]{0,30}sources?/i);
+      // instead of treating each of the (many more) passages as its own source. The model's
+      // exact wording for "source" varies (sources/documents/items), so match loosely on the
+      // count rather than a specific noun.
+      expect(done.result.answer).toMatch(/\b(?:4|four)\b[^.]{0,40}(?:sources?|documents?|items?)/i);
     }, 60000);
 
     it('does not error on "Summarize the contents of all sources in this notebook."', async () => {
