@@ -63,14 +63,18 @@ export async function maybeGenerateSourceIntro(
 
   const followUpQuestions = await generateFollowUps({ answer: summary, passages: sample });
 
-  const { data: claimed } = await supabase
-    .from('sources')
-    .update({ intro_summary: summary, intro_generated_at: new Date().toISOString() })
-    .eq('id', sourceId)
-    .is('intro_generated_at', null)
-    .select('id');
-  if (!claimed || claimed.length === 0) return;
+  // A retried step could reach here after a prior attempt already inserted the message
+  // but failed before claiming intro_generated_at below; guard against a duplicate post.
+  const { data: existingMessage } = await supabase
+    .from('messages')
+    .select('id')
+    .eq('source_id', sourceId)
+    .limit(1);
+  if (existingMessage && existingMessage.length > 0) return;
 
+  // Insert the message before flipping intro_generated_at: the frontend polls sources to
+  // decide when to stop polling messages, so the message must already be visible by the
+  // time that flag flips or the client can stop polling before ever fetching it.
   await supabase.from('messages').insert({
     notebook_id: source.notebook_id,
     source_id: sourceId,
@@ -79,4 +83,10 @@ export async function maybeGenerateSourceIntro(
     status: 'complete',
     follow_up_questions: followUpQuestions,
   });
+
+  await supabase
+    .from('sources')
+    .update({ intro_summary: summary, intro_generated_at: new Date().toISOString() })
+    .eq('id', sourceId)
+    .is('intro_generated_at', null);
 }

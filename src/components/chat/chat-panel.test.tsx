@@ -70,6 +70,22 @@ describe('ChatPanel', () => {
     expect(screen.getByText(/let.s start your notebook/i)).toBeInTheDocument();
   });
 
+  it('keeps the welcome state loading indicator visible while a source intro is still generating', () => {
+    const { container } = renderPanel(
+      [],
+      vi.fn(),
+      false,
+      0,
+      null,
+      null,
+      vi.fn(),
+      ['Q3 Report.pdf'],
+      false,
+    );
+    expect(screen.getByText(/let.s start your notebook/i)).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="skeleton"]')).toBeInTheDocument();
+  });
+
   it('opens the citation drawer with the exact passage when a marker is clicked', async () => {
     const user = userEvent.setup();
     renderPanel([messageWithCitation]);
